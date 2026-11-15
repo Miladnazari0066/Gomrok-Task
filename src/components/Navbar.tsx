@@ -7,15 +7,16 @@ import {
   RefreshCw,
   PieChart,
   Eye,
-  Lock,
-  ShieldAlert,
   Bell,
   ClipboardList,
   UserCheck,
+  Menu,
+  X,
 } from 'lucide-react';
 import { toJalali, WDN, JMONTHS, fa, pad2 } from '../utils/jalali';
 import { isSupabaseConfigured } from '../lib/supabase';
 import { UserRole } from './LoginGate';
+import { PWAInstallButton } from './PWAInstallButton';
 
 interface NavbarProps {
   onLogout: () => void;
@@ -52,11 +53,11 @@ export const Navbar: React.FC<NavbarProps> = ({
   onSwitchOperator,
   isDefaultPasswordActive = false,
   isCloudSyncing = false,
-  currentUser,
   userRole,
 }) => {
   const [timeStr, setTimeStr] = useState('');
   const [dateStr, setDateStr] = useState('');
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   const isCloud = isSupabaseConfigured();
   const activeRole: UserRole = userRole || (sessionStorage.getItem('gm_role') as UserRole) || 'admin';
@@ -74,249 +75,110 @@ export const Navbar: React.FC<NavbarProps> = ({
   }, []);
 
   return (
-    <>
-      <header className="sticky top-0 z-40 bg-[#050a16]/85 backdrop-blur-2xl border-b border-white/12 shadow-[0_16px_40px_-10px_rgba(0,0,0,0.85)] ios-specular transition-colors duration-200 transform-gpu will-change-transform font-vazir dir-rtl select-none">
-        {/* Main Desktop & Mobile Header Row */}
-        <div className="max-w-[1460px] mx-auto px-3 sm:px-7 py-2.5 sm:py-3.5 flex items-center justify-between gap-2 sm:gap-4">
-          {/* Brand Logo & Title */}
-          <div className="flex items-center gap-2.5 sm:gap-3.5 shrink-0">
-            <div className="relative group">
-              <div className="absolute -inset-1 bg-gradient-to-r from-cyan-500 via-blue-500 to-indigo-500 rounded-2xl blur-md opacity-70 group-hover:opacity-100 transition duration-300 animate-aura" />
-              <div className="relative w-9 h-9 sm:w-11 sm:h-11 rounded-2xl bg-gradient-to-tr from-cyan-400 via-blue-500 to-indigo-600 p-[1px] shadow-2xl flex items-center justify-center shrink-0 backdrop-blur-xl">
-                <div className="w-full h-full bg-[#070d1c]/90 rounded-[15px] flex items-center justify-center text-cyan-300 shadow-[inset_0_1px_1px_rgba(255,255,255,0.3)]">
-                  <ShieldCheck className="w-5 h-5 sm:w-6 sm:h-6 text-cyan-400 drop-shadow-[0_0_10px_rgba(6,182,212,0.8)]" />
-                </div>
-              </div>
+    <header className="sticky top-0 z-40 bg-[#050a16]/95 border-b border-white/12 shadow-[0_12px_30px_-10px_rgba(0,0,0,0.8)] font-vazir dir-rtl select-none">
+      {/* Main Desktop & Mobile Header Row */}
+      <div className="max-w-[1460px] mx-auto px-3 sm:px-6 py-2 sm:py-3 flex items-center justify-between gap-2 sm:gap-4">
+        {/* Brand Logo & Title */}
+        <div className="flex items-center gap-2.5 sm:gap-3 min-w-0 shrink-0">
+          <div className="w-9 h-9 sm:w-11 sm:h-11 rounded-xl sm:rounded-2xl overflow-hidden border border-cyan-400/45 bg-[#071A21] shadow-md shrink-0 flex items-center justify-center">
+            <img
+              src="pwa-192x192.png"
+              alt="لوگوی مدیریت کارهای گمرک"
+              className="w-full h-full object-cover"
+            />
+          </div>
+          <div className="min-w-0">
+            <h1 className="font-lalezar text-base sm:text-xl lg:text-2xl font-normal leading-tight text-slate-100 tracking-wide truncate">
+              مدیریت کارهای گمرک
+            </h1>
+            <p className="hidden sm:block text-[11px] text-slate-400 font-medium truncate">
+              Customs Task Management · کنترل ورود، تجمیع و خروج
+            </p>
+          </div>
+        </div>
+
+        {/* Live Jalali Clock (Desktop / Large Tablet) */}
+        <div className="hidden lg:flex items-center gap-2.5 text-xs text-slate-200 bg-[#0c1426] border border-white/15 px-3.5 py-1.5 rounded-full shrink-0">
+          <span className="text-xs font-medium text-slate-300 whitespace-nowrap">{dateStr}</span>
+          <span className="w-px h-3.5 bg-white/20" />
+          <span className="font-lalezar text-sm text-cyan-300 tracking-wider font-normal tabular-nums whitespace-nowrap">
+            {timeStr}
+          </span>
+        </div>
+
+        {/* Controls Bar - Desktop / Tablet (>= md) */}
+        <div className="hidden md:flex items-center gap-2 shrink-0 flex-wrap justify-end">
+          {/* Active Operator Selector (Admin Only) */}
+          {activeRole === 'admin' && onSwitchOperator ? (
+            <div className="flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-full border bg-cyan-500/15 border-cyan-400/40 text-cyan-200">
+              <UserCheck className="w-3.5 h-3.5 text-cyan-400 shrink-0" />
+              <select
+                value={activeOperator}
+                onChange={(e) => onSwitchOperator(e.target.value as 'نظری' | 'یوسفی' | 'افسر')}
+                className="bg-transparent text-cyan-200 font-bold outline-none cursor-pointer text-xs"
+                title="انتخاب کاربر فعال جهت اعمال سطوح دسترسی تفکیک‌شده"
+              >
+                <option value="نظری" className="bg-[#0c0e14] text-slate-100">نظری (مدیر ارشد)</option>
+                <option value="یوسفی" className="bg-[#0c0e14] text-slate-100">یوسفی</option>
+                <option value="افسر" className="bg-[#0c0e14] text-slate-100">افسر</option>
+              </select>
             </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <h1 className="font-lalezar text-lg sm:text-2xl font-normal leading-none text-transparent bg-clip-text bg-gradient-to-l from-slate-100 via-white to-cyan-200 tracking-wide drop-shadow-[0_2px_10px_rgba(255,255,255,0.15)]">
-                  سامانه جامع مدیریت گمرک
-                </h1>
-                <span className="hidden sm:inline-flex items-center gap-1 px-2.5 py-0.5 text-[10px] font-bold rounded-full bg-cyan-500/15 border border-cyan-400/40 text-cyan-300 font-mono shadow-[0_0_12px_rgba(6,182,212,0.2)] backdrop-blur-xl">
-                  <span>iOS 27</span>
-                  <span className="opacity-60">•</span>
-                  <span>v4.0</span>
-                </span>
-              </div>
-              <p className="text-[10px] sm:text-[11px] text-slate-400/90 font-medium">
-                کنترل شیشه‌ای ورود، تجمیع و ترخیص نهایی کالا
-              </p>
-            </div>
-          </div>
-
-          {/* Live Jalali Clock (Desktop / Tablet) - iOS Dynamic Glass Capsule */}
-          <div className="hidden md:flex items-center gap-2.5 text-xs text-slate-200 bg-[#0c1426]/70 backdrop-blur-2xl border border-white/15 px-4 py-1.5 rounded-full shadow-[0_10px_25px_-5px_rgba(0,0,0,0.5),inset_0_1px_1px_rgba(255,255,255,0.25)]">
-            <span className="relative flex h-2.5 w-2.5">
-              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-              <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.8)]"></span>
-            </span>
-            <span className="text-[11px] sm:text-xs font-medium text-slate-300">{dateStr}</span>
-            <span className="w-px h-3.5 bg-white/20" />
-            <span className="font-lalezar text-xs sm:text-sm text-cyan-300 tracking-wider font-normal drop-shadow-[0_0_8px_rgba(6,182,212,0.5)]">
-              {timeStr}
-            </span>
-          </div>
-
-          {/* Controls Bar - Desktop Controls */}
-          <div className="hidden md:flex items-center gap-2 sm:gap-2.5">
-            {/* Active Operator Selector (Admin Only) */}
-            {activeRole === 'admin' && onSwitchOperator ? (
-              <div className="flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-full border bg-cyan-500/15 border-cyan-400/40 text-cyan-200 backdrop-blur-xl">
-                <UserCheck className="w-3.5 h-3.5 text-cyan-400 shrink-0" />
-                <span className="text-[11px] text-slate-300">اپراتور:</span>
-                <select
-                  value={activeOperator}
-                  onChange={(e) => onSwitchOperator(e.target.value as 'نظری' | 'یوسفی' | 'افسر')}
-                  className="bg-transparent text-cyan-200 font-bold outline-none cursor-pointer text-xs"
-                  title="انتخاب کاربر فعال جهت اعمال سطوح دسترسی تفکیک‌شده"
-                >
-                  <option value="نظری" className="bg-[#0c0e14] text-slate-100">نظری (مدیر ارشد)</option>
-                  <option value="یوسفی" className="bg-[#0c0e14] text-slate-100">یوسفی</option>
-                  <option value="افسر" className="bg-[#0c0e14] text-slate-100">افسر</option>
-                </select>
-              </div>
-            ) : (
-              <div
-                className={`flex items-center gap-2 text-xs px-3.5 py-1.5 rounded-full shrink-0 border shadow-sm transition-all backdrop-blur-xl ${
-                  activeRole === 'admin'
-                    ? 'bg-cyan-500/15 border-cyan-400/40 text-cyan-200 shadow-[0_0_16px_rgba(6,182,212,0.25),inset_0_1px_0_rgba(255,255,255,0.2)]'
-                    : 'bg-amber-500/15 border-amber-400/40 text-amber-200 shadow-[0_0_16px_rgba(245,158,11,0.25),inset_0_1px_0_rgba(255,255,255,0.2)]'
-                }`}
-              >
-                {activeRole === 'admin' ? (
-                  <ShieldCheck className="w-4 h-4 text-cyan-400" />
-                ) : (
-                  <Eye className="w-4 h-4 text-amber-400" />
-                )}
-                <b className="font-bold">
-                  {activeRole === 'admin' ? 'مدیر (دسترسی کامل)' : 'ناظر (فقط مشاهده و پرینت)'}
-                </b>
-              </div>
-            )}
-
-            {/* Notification Bell Button */}
-            {onOpenNotifications && (
-              <button
-                onClick={onOpenNotifications}
-                className="relative flex items-center gap-1.5 text-xs text-amber-200 bg-gradient-to-b from-amber-500/20 to-orange-600/15 hover:from-amber-500/30 hover:to-orange-600/25 border border-amber-400/40 px-3 py-1.5 rounded-full transition-all active:scale-95 shadow-[0_8px_20px_rgba(0,0,0,0.4)] cursor-pointer font-bold shrink-0 backdrop-blur-xl"
-                title="مرکز اعلان‌های هوشمند"
-              >
-                <Bell className={`w-3.5 h-3.5 text-amber-400 ${unreadNotificationsCount > 0 ? 'animate-pulse' : ''}`} />
-                <span className="hidden xl:inline">اعلان‌ها</span>
-                {unreadNotificationsCount > 0 && (
-                  <span className="px-1.5 py-0.2 rounded-full bg-rose-500 text-white text-[10px] font-mono tabular-nums font-black shadow-sm">
-                    {fa(unreadNotificationsCount)}
-                  </span>
-                )}
-              </button>
-            )}
-
-            {/* Daily Tasks Button */}
-            {onOpenDailyTasks && (
-              <button
-                onClick={onOpenDailyTasks}
-                className="relative flex items-center gap-1.5 text-xs text-indigo-200 bg-gradient-to-b from-indigo-500/20 to-blue-600/15 hover:from-indigo-500/30 hover:to-blue-600/25 border border-indigo-400/40 px-3 py-1.5 rounded-full transition-all active:scale-95 shadow-[0_8px_20px_rgba(0,0,0,0.4)] cursor-pointer font-bold shrink-0 backdrop-blur-xl"
-                title="مدیریت کارهای روزانه"
-              >
-                <ClipboardList className="w-3.5 h-3.5 text-indigo-300" />
-                <span className="hidden xl:inline">کارهای روزانه</span>
-                {(pendingTasksCount > 0 || overdueTasksCount > 0) && (
-                  <span
-                    className={`px-1.5 py-0.2 rounded-full text-[10px] font-mono tabular-nums font-black ${
-                      overdueTasksCount > 0 ? 'bg-rose-500 text-white' : 'bg-indigo-400 text-slate-950'
-                    }`}
-                  >
-                    {fa(pendingTasksCount)}
-                  </span>
-                )}
-              </button>
-            )}
-
-            {/* Security Center Button */}
-            {onOpenSecurityCenter && (
-              <button
-                onClick={onOpenSecurityCenter}
-                className="relative flex items-center gap-1.5 text-xs text-emerald-200 bg-gradient-to-b from-emerald-500/20 to-teal-600/15 hover:from-emerald-500/30 hover:to-teal-600/25 border border-emerald-400/40 px-3.5 py-1.5 rounded-full transition-all active:scale-95 shadow-[0_8px_20px_rgba(0,0,0,0.4),inset_0_1px_0_rgba(255,255,255,0.3)] cursor-pointer font-bold shrink-0 backdrop-blur-xl"
-                title="مرکز امنیت و حریم دفاعی سامانه"
-              >
-                <ShieldCheck className="w-3.5 h-3.5 text-emerald-400 drop-shadow-[0_0_6px_rgba(16,185,129,0.7)]" />
-                <span>امنیت</span>
-                {isDefaultPasswordActive && (
-                  <span
-                    className="w-2 h-2 rounded-full bg-amber-400 animate-ping absolute -top-0.5 -right-0.5"
-                    title="کدهای پیش‌فرض فعال است - لطفاً تغییر دهید"
-                  />
-                )}
-              </button>
-            )}
-
-            {/* Commodity & Docs Summary Button */}
-            {onOpenSummaryModal && (
-              <button
-                onClick={onOpenSummaryModal}
-                className="flex items-center gap-1.5 text-xs text-cyan-200 bg-gradient-to-b from-white/10 to-white/5 hover:from-white/15 hover:to-white/10 border border-cyan-400/40 px-3.5 py-1.5 rounded-full transition-all active:scale-95 shadow-[0_8px_20px_rgba(0,0,0,0.4),inset_0_1px_0_rgba(255,255,255,0.3)] cursor-pointer font-bold shrink-0 backdrop-blur-xl"
-                title="مشاهده خلاصه و آمار اسناد تفکیکی کالاها"
-              >
-                <PieChart className="w-3.5 h-3.5 text-cyan-400 drop-shadow-[0_0_6px_rgba(6,182,212,0.6)]" />
-                <span>آمار تفکیکی</span>
-              </button>
-            )}
-
-            {/* Cloud Status Icon Button */}
-            {onOpenCloudDb && (
-              <button
-                onClick={onOpenCloudDb}
-                className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-full border text-xs font-bold transition-all active:scale-95 shadow-md backdrop-blur-xl ${
-                  !isCloud
-                    ? 'bg-rose-500/15 hover:bg-rose-500/25 border-rose-500/40 text-rose-300 shadow-[0_0_15px_rgba(244,63,94,0.2),inset_0_1px_0_rgba(255,255,255,0.2)]'
-                    : isCloudSyncing
-                    ? 'bg-amber-500/25 border-amber-500/60 text-amber-300 shadow-[0_0_20px_rgba(251,191,36,0.6),inset_0_1px_0_rgba(255,255,255,0.3)] animate-pulse'
-                    : 'bg-emerald-500/20 hover:bg-emerald-500/30 border-emerald-400/50 text-emerald-200 shadow-[0_0_18px_rgba(16,185,129,0.3),inset_0_1px_0_rgba(255,255,255,0.25)]'
-                }`}
-              >
-                {!isCloud ? (
-                  <CloudOff className="w-3.5 h-3.5 text-rose-400 shrink-0" />
-                ) : isCloudSyncing ? (
-                  <RefreshCw className="w-3.5 h-3.5 text-amber-300 animate-spin shrink-0" />
-                ) : (
-                  <CloudCheck className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
-                )}
-                <span>{isCloud ? 'دیتابیس ابری' : 'آفلاین'}</span>
-              </button>
-            )}
-
-            {/* Logout Button */}
-            <button
-              onClick={onLogout}
-              className="flex items-center gap-1.5 text-xs text-rose-200 bg-gradient-to-b from-rose-500/20 to-red-600/15 hover:from-rose-500/30 hover:to-red-600/25 border border-rose-500/40 px-4 py-1.5 rounded-full transition-all active:scale-95 cursor-pointer font-bold shrink-0 shadow-[0_8px_20px_rgba(0,0,0,0.4),inset_0_1px_0_rgba(255,255,255,0.25)] backdrop-blur-xl"
-              title="خروج از سامانه"
-            >
-              <span>خروج</span>
-              <LogOut className="w-3.5 h-3.5 text-rose-400" />
-            </button>
-          </div>
-
-          {/* Mobile Top Header Right Controls (< md) */}
-          <div className="flex md:hidden items-center gap-1.5">
-            {/* Active User Badge */}
+          ) : (
             <div
-              className={`flex items-center gap-1 text-[11px] px-2.5 py-1 rounded-full shrink-0 border ${
+              className={`flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-full shrink-0 border ${
                 activeRole === 'admin'
                   ? 'bg-cyan-500/15 border-cyan-400/40 text-cyan-200'
                   : 'bg-amber-500/15 border-amber-400/40 text-amber-200'
               }`}
             >
               {activeRole === 'admin' ? (
-                <ShieldCheck className="w-3 h-3 text-cyan-400" />
+                <ShieldCheck className="w-3.5 h-3.5 text-cyan-400" />
               ) : (
-                <Eye className="w-3 h-3 text-amber-400" />
+                <Eye className="w-3.5 h-3.5 text-amber-400" />
               )}
-              <b className="font-bold">
+              <b className="font-bold whitespace-nowrap">
                 {activeRole === 'admin' ? 'مدیر' : 'ناظر'}
               </b>
             </div>
+          )}
 
-            {/* Logout Button */}
-            <button
-              onClick={onLogout}
-              className="flex items-center gap-1 text-[11px] text-rose-200 bg-rose-500/25 hover:bg-rose-500/35 border border-rose-500/50 px-3 py-1 rounded-full transition-all active:scale-95 cursor-pointer font-bold shrink-0 shadow-sm shadow-rose-500/20"
-              title="خروج از سامانه"
-            >
-              <span>خروج</span>
-              <LogOut className="w-3 h-3 text-rose-400" />
-            </button>
-          </div>
-        </div>
+          {/* PWA Install Button */}
+          <PWAInstallButton />
 
-        {/* Mobile Dedicated Controls Strip (< md) */}
-        <div className="md:hidden bg-slate-950/80 px-3 py-2 border-t border-white/10 flex items-center gap-2 overflow-x-auto no-scrollbar">
-          {/* Notification Bell (Mobile) */}
+          {/* Notification Bell Button */}
           {onOpenNotifications && (
             <button
+              type="button"
               onClick={onOpenNotifications}
-              className="flex items-center gap-1.5 text-xs text-amber-200 bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/40 px-3 py-1.5 rounded-xl transition-all active:scale-95 font-semibold shrink-0"
+              className="relative flex items-center gap-1.5 text-xs text-amber-200 bg-amber-500/20 hover:bg-amber-500/30 border border-amber-400/40 px-3 py-1.5 rounded-full transition-colors cursor-pointer font-bold shrink-0 whitespace-nowrap"
+              title="مرکز اعلان‌های هوشمند"
             >
-              <Bell className="w-3.5 h-3.5 text-amber-400" />
-              <span>اعلان</span>
+              <Bell className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+              <span className="hidden xl:inline">اعلان‌ها</span>
               {unreadNotificationsCount > 0 && (
-                <span className="px-1.5 py-0.2 rounded-full bg-rose-500 text-white text-[10px] font-mono font-bold">
+                <span className="px-1.5 py-0.2 rounded-full bg-rose-500 text-white text-[10px] font-mono tabular-nums font-black">
                   {fa(unreadNotificationsCount)}
                 </span>
               )}
             </button>
           )}
 
-          {/* Daily Tasks (Mobile) */}
+          {/* Daily Tasks Button */}
           {onOpenDailyTasks && (
             <button
+              type="button"
               onClick={onOpenDailyTasks}
-              className="flex items-center gap-1.5 text-xs text-indigo-200 bg-indigo-500/20 hover:bg-indigo-500/30 border border-indigo-500/40 px-3 py-1.5 rounded-xl transition-all active:scale-95 font-semibold shrink-0"
+              className="relative flex items-center gap-1.5 text-xs text-indigo-200 bg-indigo-500/20 hover:bg-indigo-500/30 border border-indigo-400/40 px-3 py-1.5 rounded-full transition-colors cursor-pointer font-bold shrink-0 whitespace-nowrap"
+              title="مدیریت کارهای روزانه"
             >
-              <ClipboardList className="w-3.5 h-3.5 text-indigo-300" />
-              <span>کارها</span>
-              {pendingTasksCount > 0 && (
-                <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-mono font-bold ${overdueTasksCount > 0 ? 'bg-rose-500 text-white' : 'bg-indigo-400 text-slate-950'}`}>
+              <ClipboardList className="w-3.5 h-3.5 text-indigo-300 shrink-0" />
+              <span className="hidden xl:inline">کارهای روزانه</span>
+              {(pendingTasksCount > 0 || overdueTasksCount > 0) && (
+                <span
+                  className={`px-1.5 py-0.2 rounded-full text-[10px] font-mono tabular-nums font-black ${
+                    overdueTasksCount > 0 ? 'bg-rose-500 text-white' : 'bg-indigo-400 text-slate-950'
+                  }`}
+                >
                   {fa(pendingTasksCount)}
                 </span>
               )}
@@ -326,62 +188,216 @@ export const Navbar: React.FC<NavbarProps> = ({
           {/* Security Center Button */}
           {onOpenSecurityCenter && (
             <button
+              type="button"
               onClick={onOpenSecurityCenter}
-              className="flex items-center gap-1.5 text-xs text-emerald-200 bg-emerald-500/20 hover:bg-emerald-500/30 border border-emerald-500/40 px-3 py-1.5 rounded-xl transition-all active:scale-95 font-semibold shrink-0"
+              className="relative flex items-center gap-1.5 text-xs text-emerald-200 bg-emerald-500/20 hover:bg-emerald-500/30 border border-emerald-400/40 px-3 py-1.5 rounded-full transition-colors cursor-pointer font-bold shrink-0 whitespace-nowrap"
+              title="مرکز امنیت و حریم دفاعی سامانه"
             >
-              <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
-              <span>امنیت</span>
+              <ShieldCheck className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+              <span className="hidden xl:inline">امنیت</span>
               {isDefaultPasswordActive && (
-                <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse" />
+                <span
+                  className="w-2 h-2 rounded-full bg-amber-400 absolute -top-0.5 -right-0.5"
+                  title="کدهای پیش‌فرض فعال است - لطفاً تغییر دهید"
+                />
               )}
             </button>
           )}
 
-          {/* Summary Stats Button */}
+          {/* Commodity & Docs Summary Button */}
           {onOpenSummaryModal && (
             <button
+              type="button"
               onClick={onOpenSummaryModal}
-              className="flex items-center gap-1.5 text-xs text-cyan-200 bg-cyan-500/20 hover:bg-cyan-500/30 border border-cyan-500/40 px-3 py-1.5 rounded-xl transition-all active:scale-95 font-semibold shrink-0"
+              className="flex items-center gap-1.5 text-xs text-cyan-200 bg-white/10 hover:bg-white/15 border border-cyan-400/40 px-3 py-1.5 rounded-full transition-colors cursor-pointer font-bold shrink-0 whitespace-nowrap"
+              title="مشاهده خلاصه و آمار اسناد تفکیکی کالاها"
             >
-              <PieChart className="w-3.5 h-3.5 text-cyan-400" />
-              <span>آمار کالاها</span>
+              <PieChart className="w-3.5 h-3.5 text-cyan-400 shrink-0" />
+              <span className="hidden xl:inline">آمار تفکیکی</span>
             </button>
           )}
 
-          {/* Cloud DB Status */}
+          {/* Cloud Status Icon Button */}
           {onOpenCloudDb && (
             <button
+              type="button"
               onClick={onOpenCloudDb}
-              className={`flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-xl border transition-all active:scale-95 shrink-0 ${
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-xs font-bold transition-colors cursor-pointer shrink-0 whitespace-nowrap ${
                 !isCloud
-                  ? 'bg-rose-500/15 border-rose-500/30 text-rose-300'
+                  ? 'bg-rose-500/15 hover:bg-rose-500/25 border-rose-500/40 text-rose-300'
                   : isCloudSyncing
-                  ? 'bg-amber-500/20 border-amber-500/50 text-amber-300 animate-pulse'
-                  : 'bg-emerald-500/20 border-emerald-500/40 text-emerald-200'
+                  ? 'bg-amber-500/25 border-amber-500/60 text-amber-300'
+                  : 'bg-emerald-500/20 hover:bg-emerald-500/30 border-emerald-400/50 text-emerald-200'
               }`}
+              title="وضعیت اتصال به دیتابیس ابری"
             >
               {!isCloud ? (
-                <CloudOff className="w-3.5 h-3.5 text-rose-400" />
+                <CloudOff className="w-3.5 h-3.5 text-rose-400 shrink-0" />
               ) : isCloudSyncing ? (
-                <RefreshCw className="w-3.5 h-3.5 text-amber-300 animate-spin" />
+                <RefreshCw className="w-3.5 h-3.5 text-amber-300 animate-spin shrink-0" />
               ) : (
-                <CloudCheck className="w-3.5 h-3.5 text-emerald-400" />
+                <CloudCheck className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
               )}
-              <span>{isCloud ? 'دیتابیس ابری' : 'اتصال ابری'}</span>
+              <span className="hidden xl:inline">{isCloud ? 'دیتابیس ابری' : 'آفلاین'}</span>
             </button>
           )}
 
-          {/* Date and Time Chip */}
-          <div className="flex items-center gap-1.5 text-[11px] text-slate-300 bg-white/5 border border-white/10 px-2.5 py-1.5 rounded-xl shrink-0 mr-auto">
-            <span className="font-lalezar text-cyan-400 text-xs">{timeStr}</span>
-            <span className="text-slate-400">|</span>
-            <span>{dateStr}</span>
-          </div>
+          {/* Logout Button */}
+          <button
+            type="button"
+            onClick={onLogout}
+            className="flex items-center gap-1.5 text-xs text-rose-200 bg-rose-500/20 hover:bg-rose-500/30 border border-rose-500/40 px-3.5 py-1.5 rounded-full transition-colors cursor-pointer font-bold shrink-0 whitespace-nowrap"
+            title="خروج از سامانه"
+          >
+            <span>خروج</span>
+            <LogOut className="w-3.5 h-3.5 text-rose-400" />
+          </button>
         </div>
 
-        {/* Glowing Strip */}
-        <div className="h-0.5 bg-gradient-to-r from-transparent via-cyan-500/50 to-transparent" />
-      </header>
-    </>
+        {/* Mobile Compact Top Header Controls (< md, strictly single-row <= 56px height) */}
+        <div className="flex md:hidden items-center gap-1.5 shrink-0">
+          {onOpenNotifications && (
+            <button
+              type="button"
+              onClick={onOpenNotifications}
+              className="relative min-w-[44px] min-h-[44px] flex items-center justify-center rounded-xl bg-amber-500/15 border border-amber-500/35 text-amber-300 cursor-pointer"
+              aria-label="اعلان‌ها"
+            >
+              <Bell className="w-4 h-4" />
+              {unreadNotificationsCount > 0 && (
+                <span className="absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1 rounded-full bg-rose-500 text-white text-[10px] font-mono tabular-nums font-black flex items-center justify-center">
+                  {fa(unreadNotificationsCount)}
+                </span>
+              )}
+            </button>
+          )}
+
+          {onOpenDailyTasks && (
+            <button
+              type="button"
+              onClick={onOpenDailyTasks}
+              className="relative min-w-[44px] min-h-[44px] flex items-center justify-center rounded-xl bg-indigo-500/15 border border-indigo-500/35 text-indigo-300 cursor-pointer"
+              aria-label="کارهای روزانه"
+            >
+              <ClipboardList className="w-4 h-4" />
+              {pendingTasksCount > 0 && (
+                <span
+                  className={`absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1 rounded-full text-[10px] font-mono tabular-nums font-black flex items-center justify-center ${
+                    overdueTasksCount > 0 ? 'bg-rose-500 text-white' : 'bg-indigo-400 text-slate-950'
+                  }`}
+                >
+                  {fa(pendingTasksCount)}
+                </span>
+              )}
+            </button>
+          )}
+
+          <button
+            type="button"
+            onClick={() => setMobileMenuOpen((prev) => !prev)}
+            className="min-w-[44px] min-h-[44px] flex items-center justify-center rounded-xl bg-white/8 border border-white/15 text-slate-200 cursor-pointer"
+            aria-label={mobileMenuOpen ? 'بستن منو' : 'باز کردن منوی ابزارها'}
+          >
+            {mobileMenuOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
+          </button>
+        </div>
+      </div>
+
+      {/* Collapsible Mobile Drawer Strip (Only expands when Menu toggled so idle sticky height stays <= 15%) */}
+      {mobileMenuOpen && (
+        <div className="md:hidden bg-[#070d1b] px-3 py-3 border-t border-white/10 space-y-2.5">
+          <div className="flex items-center justify-between gap-2 text-xs">
+            <div className="flex items-center gap-2">
+              {activeRole === 'admin' && onSwitchOperator ? (
+                <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border bg-cyan-500/15 border-cyan-400/40 text-cyan-200 min-h-[40px]">
+                  <UserCheck className="w-3.5 h-3.5 text-cyan-400 shrink-0" />
+                  <select
+                    value={activeOperator}
+                    onChange={(e) => onSwitchOperator(e.target.value as 'نظری' | 'یوسفی' | 'افسر')}
+                    className="bg-transparent text-cyan-200 font-bold outline-none text-xs"
+                  >
+                    <option value="نظری" className="bg-[#0c0e14]">نظری (مدیر ارشد)</option>
+                    <option value="یوسفی" className="bg-[#0c0e14]">یوسفی</option>
+                    <option value="افسر" className="bg-[#0c0e14]">افسر</option>
+                  </select>
+                </div>
+              ) : (
+                <span className="px-2.5 py-1.5 rounded-xl bg-amber-500/15 border border-amber-400/40 text-amber-200 font-bold">
+                  {activeRole === 'admin' ? 'مدیر' : 'ناظر'}
+                </span>
+              )}
+            </div>
+
+            <div className="flex items-center gap-1.5 text-[11px] text-slate-300 font-mono tabular-nums">
+              <span className="text-cyan-300 font-bold">{timeStr}</span>
+              <span className="text-slate-500">·</span>
+              <span>{dateStr}</span>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2 flex-wrap">
+            <PWAInstallButton compact />
+
+            {onOpenSecurityCenter && (
+              <button
+                type="button"
+                onClick={() => {
+                  setMobileMenuOpen(false);
+                  onOpenSecurityCenter();
+                }}
+                className="min-h-[40px] flex items-center gap-1.5 text-xs text-emerald-200 bg-emerald-500/20 border border-emerald-500/40 px-3 py-1.5 rounded-xl font-semibold cursor-pointer"
+              >
+                <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
+                <span>امنیت</span>
+              </button>
+            )}
+
+            {onOpenSummaryModal && (
+              <button
+                type="button"
+                onClick={() => {
+                  setMobileMenuOpen(false);
+                  onOpenSummaryModal();
+                }}
+                className="min-h-[40px] flex items-center gap-1.5 text-xs text-cyan-200 bg-cyan-500/20 border border-cyan-500/40 px-3 py-1.5 rounded-xl font-semibold cursor-pointer"
+              >
+                <PieChart className="w-3.5 h-3.5 text-cyan-400" />
+                <span>آمار کالاها</span>
+              </button>
+            )}
+
+            {onOpenCloudDb && (
+              <button
+                type="button"
+                onClick={() => {
+                  setMobileMenuOpen(false);
+                  onOpenCloudDb();
+                }}
+                className={`min-h-[40px] flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-xl border cursor-pointer ${
+                  !isCloud
+                    ? 'bg-rose-500/15 border-rose-500/30 text-rose-300'
+                    : 'bg-emerald-500/20 border-emerald-500/40 text-emerald-200'
+                }`}
+              >
+                {!isCloud ? <CloudOff className="w-3.5 h-3.5 text-rose-400" /> : <CloudCheck className="w-3.5 h-3.5 text-emerald-400" />}
+                <span>{isCloud ? 'دیتابیس ابری' : 'اتصال ابری'}</span>
+              </button>
+            )}
+
+            <button
+              type="button"
+              onClick={onLogout}
+              className="min-h-[40px] flex items-center gap-1.5 text-xs text-rose-200 bg-rose-500/25 border border-rose-500/50 px-3 py-1.5 rounded-xl font-bold mr-auto cursor-pointer"
+            >
+              <span>خروج</span>
+              <LogOut className="w-3.5 h-3.5 text-rose-400" />
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Subtle Bottom Hairline */}
+      <div className="h-px bg-gradient-to-r from-transparent via-cyan-500/45 to-transparent" />
+    </header>
   );
 };

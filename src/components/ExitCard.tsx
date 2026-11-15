@@ -188,46 +188,40 @@ export const ExitCard: React.FC<ExitCardProps> = ({
   return (
     <div
       id={`exit-card-${doc.id}`}
-      className={`glass-panel ios-specular p-5 sm:p-6 relative transition-all duration-300 shadow-[0_24px_50px_-15px_rgba(0,0,0,0.8)] hover:shadow-[0_32px_65px_-15px_rgba(0,0,0,0.9)] hover:border-white/30 rounded-3xl group overflow-hidden border border-white/14 ${
-        stage === 7 && isPhysicallyAndFinanciallyClosed ? 'border-emerald-500/40 shadow-[0_0_30px_rgba(16,185,129,0.15)]' : ''
-      } ${isHighlighted ? 'ring-2 ring-cyan-400 border-cyan-400/70 shadow-[0_0_35px_rgba(6,182,212,0.35)]' : ''}`}
+      className={`glass-panel ios-specular p-4 sm:p-6 relative transition-colors duration-200 rounded-3xl overflow-hidden border border-white/14 ${
+        stage === 7 && isPhysicallyAndFinanciallyClosed ? 'border-emerald-500/40' : ''
+      } ${isHighlighted ? 'ring-2 ring-cyan-400 border-cyan-400/70' : ''}`}
       style={{ borderRightWidth: '4px', borderRightColor: currentCfg.color }}
     >
-      {/* Ambient background glow matching current stage */}
-      <div
-        className="absolute top-0 right-0 w-60 h-60 rounded-full blur-[110px] pointer-events-none opacity-15 transition-opacity group-hover:opacity-25"
-        style={{ backgroundColor: currentCfg.color }}
-      />
-
       {/* Top Header */}
       <div className="flex items-center justify-between gap-3 flex-wrap mb-3.5 relative z-10">
-        <div className="flex items-center gap-2.5 flex-wrap">
-          <span className="font-lalezar text-2xl text-slate-100 tracking-wide flex items-center gap-1.5 drop-shadow-sm">
+        <div className="flex items-center gap-2 sm:gap-2.5 flex-wrap">
+          <span className="font-lalezar text-xl sm:text-2xl text-slate-100 tracking-wide flex items-center gap-1.5">
             <span className="text-xs text-slate-400 font-sans font-medium">کوتاژ:</span>
             {fa(doc.cottage)}
           </span>
 
           {/* Highlighted File/Case Number Badge */}
-          <div className="flex items-center gap-1.5 px-3 py-1 rounded-xl bg-gradient-to-r from-amber-500/25 via-amber-400/20 to-orange-500/20 border border-amber-400/50 text-amber-200 text-xs font-bold shadow-[0_0_14px_rgba(251,191,36,0.25)] backdrop-blur-md">
+          <div className="flex items-center gap-1.5 px-2.5 sm:px-3 py-1 rounded-xl bg-gradient-to-r from-amber-500/20 to-orange-500/15 border border-amber-400/45 text-amber-200 text-xs font-bold">
             <FolderKanban className="w-3.5 h-3.5 text-amber-400 shrink-0" />
             <span>پرونده:</span>
             <span className="font-mono text-amber-100 tracking-wider text-sm font-black">{fa(doc.file)}</span>
           </div>
 
-          <span className="bg-slate-900/80 border border-cyan-500/30 px-3 py-1 rounded-xl text-xs ltr font-mono text-cyan-300 font-bold tracking-widest backdrop-blur-md shadow-xs">
+          <span className="bg-slate-900/90 border border-cyan-500/30 px-2.5 sm:px-3 py-1 rounded-xl text-xs ltr font-mono text-cyan-300 font-bold tracking-widest">
             {doc.bl}
           </span>
-          <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold border backdrop-blur-md shadow-xs ${currentCfg.badgeCls}`}>
-            <span className="w-2 h-2 rounded-full bg-current animate-pulse shadow-[0_0_8px_currentColor]" />
+          <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold border ${currentCfg.badgeCls}`}>
+            <span className="w-2 h-2 rounded-full bg-current" />
             {currentCfg.label}
           </span>
           {batch && (
-            <span className="bg-gradient-to-r from-cyan-500/15 to-blue-500/15 border border-cyan-400/40 text-cyan-300 text-xs font-bold px-3 py-0.5 rounded-full backdrop-blur-md shadow-xs">
+            <span className="bg-cyan-500/15 border border-cyan-400/40 text-cyan-300 text-xs font-bold px-3 py-0.5 rounded-full">
               تجمیع {doc.batchId}
             </span>
           )}
           {doc.partialExit?.isPartial && (
-            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-xl bg-gradient-to-r from-amber-500/20 via-orange-500/15 to-emerald-500/15 border border-amber-400/50 text-amber-200 text-xs font-bold shadow-[0_0_12px_rgba(245,158,11,0.2)] backdrop-blur-md">
+            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-xl bg-gradient-to-r from-amber-500/20 via-orange-500/15 to-emerald-500/15 border border-amber-400/50 text-amber-200 text-xs font-bold">
               <Percent className="w-3.5 h-3.5 text-amber-400 shrink-0" />
               <span>خروج {fa(doc.partialExit.exitPercent)}٪</span>
               <span className="text-emerald-300 font-mono">({fa(doc.partialExit.exitPallets)} پالت)</span>
@@ -237,12 +231,13 @@ export const ExitCard: React.FC<ExitCardProps> = ({
           )}
         </div>
 
-        {/* Action Buttons - Always Visible on All Devices */}
+        {/* Action Buttons */}
         <div className="flex items-center gap-2 flex-wrap shrink-0">
           {linkedEntryDoc && onOpenClearance9010 && (
             <button
+              type="button"
               onClick={() => onOpenClearance9010(linkedEntryDoc)}
-              className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl border border-amber-400/50 bg-amber-500/15 hover:bg-amber-500/25 text-amber-200 text-xs font-bold transition-all backdrop-blur-md active:scale-95 shadow-sm shadow-amber-500/10 cursor-pointer"
+              className="min-h-[38px] flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl border border-amber-400/50 bg-amber-500/15 hover:bg-amber-500/25 text-amber-200 text-xs font-bold transition-colors active:scale-95 cursor-pointer"
               title="مدیریت ۹۰/۱۰، ساتا و خروج فیزیکی کوتاژ مرجع"
             >
               <ShieldCheck className="w-3.5 h-3.5 text-amber-400" />
@@ -250,8 +245,9 @@ export const ExitCard: React.FC<ExitCardProps> = ({
             </button>
           )}
           <button
+            type="button"
             onClick={handlePrint}
-            className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl border border-cyan-400/40 bg-cyan-500/15 hover:bg-cyan-500/25 text-cyan-200 text-xs font-bold transition-all backdrop-blur-md active:scale-95 shadow-sm shadow-cyan-500/10 cursor-pointer"
+            className="min-h-[38px] flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl border border-cyan-400/40 bg-cyan-500/15 hover:bg-cyan-500/25 text-cyan-200 text-xs font-bold transition-colors active:scale-95 cursor-pointer"
             title="پرینت قبض‌های خروج"
           >
             <Printer className="w-3.5 h-3.5 text-cyan-400" />
@@ -259,8 +255,9 @@ export const ExitCard: React.FC<ExitCardProps> = ({
           </button>
           {canEdit && (
             <button
+              type="button"
               onClick={() => onEdit(doc)}
-              className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl border border-blue-400/40 bg-blue-500/15 hover:bg-blue-500/25 text-blue-200 text-xs font-bold transition-all backdrop-blur-md active:scale-95 shadow-sm shadow-blue-500/10 cursor-pointer"
+              className="min-h-[38px] flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl border border-blue-400/40 bg-blue-500/15 hover:bg-blue-500/25 text-blue-200 text-xs font-bold transition-colors active:scale-95 cursor-pointer"
               title="ویرایش این سند خروج"
             >
               <Edit2 className="w-3.5 h-3.5 text-blue-400" />
@@ -269,8 +266,9 @@ export const ExitCard: React.FC<ExitCardProps> = ({
           )}
           {canDelete && (
             <button
+              type="button"
               onClick={() => onDelete(doc.id)}
-              className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl border border-rose-500/40 bg-rose-500/15 hover:bg-rose-500/25 text-rose-200 text-xs font-bold transition-all backdrop-blur-md active:scale-95 shadow-sm shadow-rose-500/10 cursor-pointer"
+              className="min-h-[38px] flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl border border-rose-500/40 bg-rose-500/15 hover:bg-rose-500/25 text-rose-200 text-xs font-bold transition-colors active:scale-95 cursor-pointer"
               title="حذف این سند خروج"
             >
               <Trash2 className="w-3.5 h-3.5 text-rose-400" />
@@ -298,6 +296,11 @@ export const ExitCard: React.FC<ExitCardProps> = ({
           <Package className="w-3.5 h-3.5 text-cyan-400" />
           {esc(doc.goods)}
         </span>
+        {(doc.mdfThickness || linkedEntryDoc?.mdfThickness) && (
+          <span className="flex items-center gap-1.5 bg-indigo-500/10 border border-indigo-400/30 text-indigo-200 font-mono text-[11px] font-bold px-2.5 py-1 rounded-lg">
+            ضخامت: {esc(doc.mdfThickness || linkedEntryDoc?.mdfThickness || '')}
+          </span>
+        )}
         {doc.brand && (
           <span className="flex items-center gap-1.5 bg-amber-500/10 border border-amber-500/30 text-amber-300 font-semibold px-2.5 py-1 rounded-lg">
             <Tag className="w-3.5 h-3.5 text-amber-400" />
@@ -415,7 +418,7 @@ export const ExitCard: React.FC<ExitCardProps> = ({
                       : node.skip
                       ? 'border-dashed border-white/20 text-slate-500 opacity-50'
                       : isCur
-                      ? 'border-amber-400 bg-amber-500/20 text-amber-300 animate-pulse shadow-[0_0_14px_rgba(251,191,36,0.6)]'
+                      ? 'border-amber-400 bg-amber-500/20 text-amber-300'
                       : 'border-white/10 bg-white/5 text-slate-400'
                   }`}
                 >
@@ -625,7 +628,7 @@ export const ExitCard: React.FC<ExitCardProps> = ({
                     <div className="bg-gradient-to-r from-cyan-500/15 via-blue-500/15 to-indigo-500/15 border border-dashed border-cyan-400/50 rounded-xl p-3.5 flex items-center justify-between gap-3 flex-wrap shadow-md">
                       <div className="text-xs text-cyan-200">
                         <span className="font-bold flex items-center gap-1.5 text-cyan-100">
-                          <Sparkles className="w-4 h-4 text-amber-400 animate-spin" />
+                          <Sparkles className="w-4 h-4 text-amber-400" />
                           سابقه معتبر آزمایشگاهی برای کالای «{esc(doc.goods)}» موجود است!
                         </span>
                         <span className="text-[11px] text-slate-300 block mt-1">
@@ -825,9 +828,9 @@ export const ExitCard: React.FC<ExitCardProps> = ({
 
           {stage === 7 && (
             <div
-              className={`text-center font-bold p-3 rounded-xl text-xs mt-2 backdrop-blur-md flex items-center justify-center gap-2 border ${
+              className={`text-center font-bold p-3 rounded-xl text-xs mt-2 flex items-center justify-center gap-2 border ${
                 isPhysicallyAndFinanciallyClosed
-                  ? 'bg-gradient-to-r from-emerald-500/20 via-teal-500/20 to-emerald-500/20 border-emerald-400/60 text-emerald-200 shadow-[0_0_15px_rgba(16,185,129,0.25)]'
+                  ? 'bg-gradient-to-r from-emerald-500/20 via-teal-500/20 to-emerald-500/20 border-emerald-400/60 text-emerald-200'
                   : 'bg-gradient-to-r from-cyan-500/15 via-blue-500/15 to-amber-500/15 border-cyan-400/50 text-cyan-200'
               }`}
             >

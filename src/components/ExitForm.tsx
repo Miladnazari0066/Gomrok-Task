@@ -4,7 +4,7 @@ import { ExitDoc, Batch, JalaliDate, EntryDoc } from '../types';
 import { JalaliDatePicker } from './JalaliDatePicker';
 import { ComboboxField } from './ComboboxField';
 import { en, todayJ, fa } from '../utils/jalali';
-import { calculateSplit9010 } from '../utils/clearance9010';
+import { calculateSplit9010, inferMdfThickness } from '../utils/clearance9010';
 
 interface ExitFormProps {
   editingDoc: ExitDoc | null;
@@ -55,6 +55,7 @@ export const ExitForm: React.FC<ExitFormProps> = ({
   const [carrier, setCarrier] = useState('');
   const [goods, setGoods] = useState('');
   const [brand, setBrand] = useState('');
+  const [mdfThickness, setMdfThickness] = useState('');
   const [unloadDate, setUnloadDate] = useState<JalaliDate>(todayJ());
   const [trailers, setTrailers] = useState('5');
   const [pallets, setPallets] = useState('40');
@@ -88,6 +89,7 @@ export const ExitForm: React.FC<ExitFormProps> = ({
       setCarrier(editingDoc.carrier);
       setGoods(editingDoc.goods);
       setBrand(editingDoc.brand || '');
+      setMdfThickness(editingDoc.mdfThickness || inferMdfThickness(editingDoc.goods || ''));
       setUnloadDate(editingDoc.unloadDate);
       setTrailers(String(editingDoc.trailers));
       setPallets(String(editingDoc.pallets || '0'));
@@ -116,6 +118,7 @@ export const ExitForm: React.FC<ExitFormProps> = ({
       setCarrier('');
       setGoods('');
       setBrand('');
+      setMdfThickness('');
       setUnloadDate(todayJ());
       setTrailers('5');
       setPallets('40');
@@ -142,6 +145,7 @@ export const ExitForm: React.FC<ExitFormProps> = ({
     if (!carrier) setCarrier(matched.carrier);
     if (!goods) setGoods(matched.goods);
     if (!brand && matched.brand) setBrand(matched.brand);
+    if (!mdfThickness) setMdfThickness(matched.mdfThickness || inferMdfThickness(matched.goods));
 
     const linkedBatch = batches.find((b) => b.finalized && b.docIds.includes(matched.id));
     if (linkedBatch && !batchId) {
@@ -296,6 +300,7 @@ export const ExitForm: React.FC<ExitFormProps> = ({
       carrier,
       goods,
       brand,
+      mdfThickness: mdfThickness.trim() || inferMdfThickness(goods),
       unloadDate,
       trailers: parseInt(en(trailers), 10) || 1,
       pallets: actualPallets,
@@ -321,6 +326,7 @@ export const ExitForm: React.FC<ExitFormProps> = ({
     setCarrier('');
     setGoods('');
     setBrand('');
+    setMdfThickness('');
     setUnloadDate(todayJ());
     setTrailers('5');
     setPallets('40');
@@ -334,9 +340,9 @@ export const ExitForm: React.FC<ExitFormProps> = ({
   };
 
   return (
-    <aside className="ios-glass-card ios-specular p-5 sm:p-6 rounded-3xl border border-white/20 shadow-[0_25px_60px_-15px_rgba(0,0,0,0.85)] sticky top-24 backdrop-blur-3xl">
+    <aside className="ios-glass-card ios-specular p-4 sm:p-6 rounded-3xl border border-white/20 shadow-[0_25px_60px_-15px_rgba(0,0,0,0.85)] lg:sticky lg:top-20">
       <div className="flex items-center gap-3 pb-4 mb-5 border-b border-white/10">
-        <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-cyan-500/25 to-blue-500/15 border border-cyan-400/40 text-cyan-300 flex items-center justify-center shadow-lg shadow-cyan-500/15 backdrop-blur-xl">
+        <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-cyan-500/25 to-blue-500/15 border border-cyan-400/40 text-cyan-300 flex items-center justify-center shadow-lg shadow-cyan-500/15">
           <LogOut className="w-5 h-5" />
         </div>
         <div>
@@ -533,6 +539,36 @@ export const ExitForm: React.FC<ExitFormProps> = ({
               />
             </div>
           )}
+        </div>
+
+        {/* MDF Thickness (Exit Phase Only) */}
+        <div className="p-3 rounded-2xl bg-slate-950/60 border border-white/10 space-y-2">
+          <div className="flex items-center justify-between gap-2 flex-wrap">
+            <label className="block text-xs font-medium text-slate-300">ضخامت MDF (میلی‌متر)</label>
+            <div className="flex items-center gap-1 flex-wrap">
+              {['16mm', '18mm', '8mm', '3mm'].map((th) => (
+                <button
+                  key={th}
+                  type="button"
+                  onClick={() => setMdfThickness(th)}
+                  className={`px-2 py-1 rounded-lg text-[10px] font-mono font-bold border transition-colors cursor-pointer ${
+                    mdfThickness === th
+                      ? 'bg-cyan-500/25 border-cyan-400 text-cyan-200'
+                      : 'bg-white/5 border-white/10 text-slate-400 hover:text-slate-200'
+                  }`}
+                >
+                  {th}
+                </button>
+              ))}
+            </div>
+          </div>
+          <input
+            type="text"
+            value={mdfThickness}
+            onChange={(e) => setMdfThickness(e.target.value)}
+            placeholder="مثلاً 16mm یا 18mm (در صورت خالی بودن از کالا استنتاج می‌شود)"
+            className="w-full glass-input rounded-xl px-3 py-2 text-xs ltr text-left outline-none font-mono min-h-[40px]"
+          />
         </div>
 
         {/* ========================================================================= */}

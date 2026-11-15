@@ -156,25 +156,11 @@ export const LoginGate: React.FC<LoginGateProps> = ({
   const isDefault = isUsingDefaultPasswords();
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto overflow-x-hidden p-3 sm:p-6 bg-[#05070d] select-none text-slate-100 font-vazir dir-rtl">
-      {/* 3D Horizon Grid Background */}
-      <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_35%,_var(--tw-gradient-stops))] from-cyan-950/40 via-[#05070d] to-[#020305]" />
-      <div
-        className="absolute inset-0 opacity-15 pointer-events-none"
-        style={{
-          backgroundImage: `linear-gradient(to right, rgba(6, 182, 212, 0.25) 1px, transparent 1px), linear-gradient(to bottom, rgba(6, 182, 212, 0.25) 1px, transparent 1px)`,
-          backgroundSize: '40px 40px',
-          transform: 'perspective(600px) rotateX(65deg) translateY(-80px) scale(2.2)',
-        }}
-      />
+    <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto overflow-x-clip p-3 sm:p-6 pt-safe pb-safe bg-[#05070d] select-none text-slate-100 font-vazir dir-rtl">
+      {/* Static Gradient Horizon Background (Zero Scroll Repaint) */}
+      <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_35%,_var(--tw-gradient-stops))] from-cyan-950/35 via-[#05070d] to-[#020305]" />
 
-      {/* Floating 3D Depth Particles */}
-      <div className="absolute inset-0 overflow-hidden pointer-events-none">
-        <div className="absolute top-1/4 left-1/6 w-64 h-64 rounded-full bg-cyan-500/10 blur-[100px] animate-pulse" />
-        <div className="absolute bottom-1/4 right-1/6 w-80 h-80 rounded-full bg-amber-500/10 blur-[120px] animate-pulse" />
-      </div>
-
-      {/* RETRACTABLE 3D HYDRAULIC CUSTOMS DOORS */}
+      {/* RETRACTABLE HYDRAULIC CUSTOMS DOORS */}
       <motion.div
         initial={isLoggingOut ? { x: '-102%', rotateY: -15 } : false}
         animate={isAccessGranted ? { x: '-102%', rotateY: -15 } : { x: 0, rotateY: 0 }}
@@ -195,7 +181,7 @@ export const LoginGate: React.FC<LoginGateProps> = ({
         <div className="absolute top-0 bottom-0 left-0 w-3 bg-[repeating-linear-gradient(45deg,#f59e0b,#f59e0b_10px,#0f172a_10px,#0f172a_20px)] opacity-80 border-r border-amber-500/40" />
       </motion.div>
 
-      {/* CENTRAL 3D FLOATING CARD MODAL */}
+      {/* CENTRAL FLOATING CARD MODAL */}
       <div className="relative z-40 w-full max-w-[430px] mx-4 px-2" style={{ perspective: '1200px' }}>
         <AnimatePresence mode="wait">
           {isLoggingOut ? (
@@ -206,11 +192,10 @@ export const LoginGate: React.FC<LoginGateProps> = ({
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0, scale: 0.95 }}
               transition={{ duration: 0.3 }}
-              className="bg-slate-900/90 border border-rose-500/40 backdrop-blur-3xl rounded-3xl p-8 text-center shadow-[0_25px_60px_-15px_rgba(244,63,94,0.3)] text-slate-100 space-y-6"
+              className="bg-slate-900/95 border border-rose-500/40 rounded-3xl p-8 text-center shadow-[0_25px_60px_-15px_rgba(244,63,94,0.3)] text-slate-100 space-y-6"
             >
               <div className="relative w-20 h-20 mx-auto">
-                <div className="absolute inset-0 rounded-full bg-rose-500/20 blur-xl animate-pulse" />
-                <div className="relative w-full h-full rounded-full bg-rose-500/20 border border-rose-400/50 flex items-center justify-center text-rose-400 shadow-[0_0_30px_rgba(244,63,94,0.6)]">
+                <div className="relative w-full h-full rounded-full bg-rose-500/20 border border-rose-400/50 flex items-center justify-center text-rose-400">
                   <Lock className="w-10 h-10 text-rose-400" />
                 </div>
               </div>
@@ -233,7 +218,7 @@ export const LoginGate: React.FC<LoginGateProps> = ({
                     initial={{ width: '0%' }}
                     animate={{ width: '100%' }}
                     transition={{ duration: 1.5, ease: 'easeInOut' }}
-                    className="h-full bg-gradient-to-r from-rose-500 via-amber-500 to-rose-400 rounded-full shadow-[0_0_15px_rgba(244,63,94,0.9)]"
+                    className="h-full bg-gradient-to-r from-rose-500 via-amber-500 to-rose-400 rounded-full"
                   />
                 </div>
 
@@ -242,7 +227,7 @@ export const LoginGate: React.FC<LoginGateProps> = ({
                   onClick={() => {
                     if (onLogoutComplete) onLogoutComplete();
                   }}
-                  className="w-full mt-2 py-3 px-4 rounded-2xl bg-gradient-to-r from-cyan-400 via-cyan-500 to-blue-600 text-slate-950 font-black text-xs hover:from-cyan-300 hover:to-blue-500 transition-all shadow-lg shadow-cyan-500/25 flex items-center justify-center gap-2 cursor-pointer active:scale-95"
+                  className="w-full mt-2 min-h-[44px] py-3 px-4 rounded-2xl bg-gradient-to-r from-cyan-400 via-cyan-500 to-blue-600 text-slate-950 font-black text-xs hover:from-cyan-300 hover:to-blue-500 transition-all shadow-lg shadow-cyan-500/25 flex items-center justify-center gap-2 cursor-pointer active:scale-95"
                 >
                   <LogIn className="w-4 h-4" />
                   <span>ورود مجدد به سامانه</span>
@@ -250,45 +235,39 @@ export const LoginGate: React.FC<LoginGateProps> = ({
               </div>
             </motion.div>
           ) : !isAccessGranted ? (
-            /* UNIFIED ACCESS CODE LOGIN CARD - iOS 27 VisionOS Glass Card */
+            /* UNIFIED ACCESS CODE LOGIN CARD */
             <motion.div
               key="login-card"
-              initial={{ opacity: 0, scale: 0.92, rotateX: 10, y: 20 }}
-              animate={{ opacity: 1, scale: 1, rotateX: 0, y: 0 }}
-              exit={{ opacity: 0, scale: 0.85, rotateX: -10, y: -30 }}
-              transition={{ duration: 0.4, ease: [0.16, 1, 0.3, 1] }}
+              initial={{ opacity: 0, scale: 0.94, y: 16 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.92, y: -20 }}
+              transition={{ duration: 0.3, ease: [0.16, 1, 0.3, 1] }}
               className={`ios-glass-card ios-specular rounded-3xl p-6 sm:p-8 text-center shadow-[0_30px_70px_-15px_rgba(0,0,0,0.95)] overflow-hidden border border-white/20 ${
                 shake ? 'animate-shake' : ''
               }`}
             >
-              {/* Header Badge */}
-              <div className="flex items-center justify-center gap-1.5 mb-4">
-                <div className="flex items-center gap-1.5 px-4 py-1.5 rounded-full bg-cyan-400/15 border border-cyan-400/40 text-cyan-200 text-xs font-semibold shadow-[0_0_15px_rgba(6,182,212,0.2)] backdrop-blur-xl">
-                  <ShieldCheck className="w-4 h-4 text-cyan-400" />
-                  <span>دیواره امنیتی ورود به سامانه گمرک</span>
-                </div>
+              {/* Brand App Icon Emblem */}
+              <div className="w-20 h-20 mx-auto mb-3 rounded-2xl overflow-hidden border border-cyan-400/45 bg-[#071A21] shadow-[0_12px_30px_rgba(6,182,212,0.28)] flex items-center justify-center">
+                <img
+                  src="pwa-192x192.png"
+                  alt="مدیریت کارهای گمرک"
+                  className="w-full h-full object-cover"
+                />
               </div>
 
-              {/* Sleek 3D Metallic Emblem */}
-              <div className="relative w-18 h-18 mx-auto mb-3" style={{ transformStyle: 'preserve-3d' }}>
-                <div className="absolute inset-0 rounded-2xl blur-2xl bg-cyan-500/35" />
-                <div className="relative w-full h-full rounded-2xl bg-gradient-to-tr from-slate-700/80 via-slate-800/90 to-slate-700/80 border border-white/25 p-0.5 shadow-2xl flex items-center justify-center backdrop-blur-xl">
-                  <div className="w-full h-full bg-[#060a14]/90 rounded-[14px] flex items-center justify-center text-cyan-300 shadow-inner">
-                    <KeyRound className="w-8 h-8 text-cyan-400 drop-shadow-[0_0_8px_rgba(6,182,212,0.6)]" />
-                  </div>
-                </div>
-              </div>
-
-              <h1 className="font-lalezar text-2xl sm:text-3xl font-normal text-slate-100 tracking-wide drop-shadow-sm">
-                احراز هویت و ورود
+              <h1 className="font-lalezar text-2xl sm:text-3xl font-normal text-slate-100 tracking-wide">
+                مدیریت کارهای گمرک
               </h1>
-              <p className="text-xs text-slate-400 mt-1 font-medium">
+              <p className="text-[11px] font-mono text-cyan-300 mt-0.5">
+                Customs Task Management
+              </p>
+              <p className="text-xs text-slate-400 mt-2 font-medium">
                 کد دسترسی خود را برای ورود امن به سامانه وارد نمایید
               </p>
 
               {/* Lockout Notification Banner */}
               {isLocked ? (
-                <div className="mt-5 p-4 rounded-2xl bg-rose-500/20 border border-rose-500/50 text-rose-200 text-xs space-y-2 backdrop-blur-xl animate-pulse">
+                <div className="mt-5 p-4 rounded-2xl bg-rose-500/20 border border-rose-500/50 text-rose-200 text-xs space-y-2">
                   <div className="flex items-center justify-center gap-2 font-bold text-rose-300">
                     <ShieldAlert className="w-5 h-5 text-rose-400" />
                     <span>حساب به دلیل حملات بروت‌فورس موقتاً قفل است</span>
@@ -297,7 +276,7 @@ export const LoginGate: React.FC<LoginGateProps> = ({
                     لطفاً تا پایان زمان شمارنده زیر صبور باشید:
                   </p>
                   <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-rose-950/60 border border-rose-500/40 text-rose-300 font-mono text-sm font-bold">
-                    <Clock className="w-4 h-4 text-rose-400 animate-spin" />
+                    <Clock className="w-4 h-4 text-rose-400" />
                     <span>{lockoutSec} ثانیه</span>
                   </div>
                 </div>
@@ -314,12 +293,12 @@ export const LoginGate: React.FC<LoginGateProps> = ({
                         autoFocus
                         disabled={isLocked}
                         maxLength={20}
-                        className="w-full bg-slate-950/70 border border-white/20 rounded-2xl py-3.5 px-4 pl-11 text-center text-lg font-bold text-cyan-300 outline-none focus:border-cyan-400 focus:ring-4 focus:ring-cyan-400/20 transition-all shadow-[inset_0_2px_4px_rgba(0,0,0,0.6)] tracking-widest backdrop-blur-xl disabled:opacity-50"
+                        className="w-full bg-slate-950/75 border border-white/20 rounded-2xl py-3.5 px-4 pl-11 text-center text-lg font-bold text-cyan-300 outline-none focus:border-cyan-400 focus:ring-4 focus:ring-cyan-400/20 transition-colors shadow-[inset_0_2px_4px_rgba(0,0,0,0.6)] tracking-widest disabled:opacity-50"
                       />
                       <button
                         type="button"
                         onClick={() => setShowPassword(!showPassword)}
-                        className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-200 cursor-pointer p-1 transition-colors"
+                        className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-200 cursor-pointer p-1.5 transition-colors"
                         title={showPassword ? 'مخفی کردن' : 'نمایش'}
                       >
                         {showPassword ? <EyeOff className="w-4.5 h-4.5" /> : <Eye className="w-4.5 h-4.5 text-cyan-400" />}
@@ -331,7 +310,7 @@ export const LoginGate: React.FC<LoginGateProps> = ({
                     <motion.div
                       initial={{ opacity: 0, y: -4 }}
                       animate={{ opacity: 1, y: 0 }}
-                      className="flex items-center justify-center gap-1.5 text-xs text-rose-200 bg-rose-500/20 border border-rose-500/40 py-2.5 px-3 rounded-2xl font-medium shadow-md backdrop-blur-xl"
+                      className="flex items-center justify-center gap-1.5 text-xs text-rose-200 bg-rose-500/20 border border-rose-500/40 py-2.5 px-3 rounded-2xl font-medium"
                     >
                       <AlertCircle className="w-4 h-4 shrink-0 text-rose-400" />
                       <span>{error}</span>
@@ -341,7 +320,7 @@ export const LoginGate: React.FC<LoginGateProps> = ({
                   <button
                     type="submit"
                     disabled={!accessCode || isLocked}
-                    className="w-full py-3.5 px-5 rounded-2xl bg-gradient-to-r from-cyan-400 via-cyan-500 to-blue-600 text-slate-950 font-black text-sm hover:from-cyan-300 hover:to-blue-500 transition-all shadow-[0_10px_30px_rgba(6,182,212,0.35),inset_0_1.5px_0_rgba(255,255,255,0.4)] flex items-center justify-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed active:scale-97 cursor-pointer"
+                    className="w-full min-h-[46px] py-3.5 px-5 rounded-2xl bg-gradient-to-r from-cyan-400 via-cyan-500 to-blue-600 text-slate-950 font-black text-sm hover:from-cyan-300 hover:to-blue-500 transition-all shadow-[0_10px_30px_rgba(6,182,212,0.35)] flex items-center justify-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed active:scale-97 cursor-pointer"
                   >
                     <span>احراز هویت و ورود</span>
                     <ArrowLeft className="w-4 h-4" />
@@ -351,7 +330,7 @@ export const LoginGate: React.FC<LoginGateProps> = ({
 
               {/* Default Credentials Helper Note (Only if Default is active) */}
               {isDefault && !isLocked && (
-                <div className="mt-4 p-2.5 rounded-xl bg-white/5 border border-white/10 text-[11px] text-slate-300 space-y-1 text-right backdrop-blur-md">
+                <div className="mt-4 p-2.5 rounded-xl bg-white/5 border border-white/10 text-[11px] text-slate-300 space-y-1 text-right">
                   <div className="flex items-center gap-1 text-cyan-300 font-bold">
                     <Info className="w-3.5 h-3.5" />
                     <span>کدهای ورود پیش‌فرض سیستم:</span>
@@ -380,11 +359,10 @@ export const LoginGate: React.FC<LoginGateProps> = ({
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0, scale: 1.05 }}
               transition={{ duration: 0.4, ease: 'easeOut' }}
-              className="bg-slate-900/90 border border-emerald-500/40 backdrop-blur-3xl rounded-3xl p-8 text-center shadow-[0_25px_60px_-15px_rgba(16,185,129,0.3)] text-slate-100 space-y-6"
+              className="bg-slate-900/95 border border-emerald-500/40 rounded-3xl p-8 text-center shadow-[0_25px_60px_-15px_rgba(16,185,129,0.3)] text-slate-100 space-y-6"
             >
               <div className="relative w-20 h-20 mx-auto">
-                <div className="absolute inset-0 rounded-full bg-emerald-500/20 blur-xl animate-ping" />
-                <div className="relative w-full h-full rounded-full bg-emerald-500/20 border border-emerald-400/50 flex items-center justify-center text-emerald-400 shadow-[0_0_30px_rgba(52,211,153,0.6)]">
+                <div className="relative w-full h-full rounded-full bg-emerald-500/20 border border-emerald-400/50 flex items-center justify-center text-emerald-400 shadow-[0_0_30px_rgba(52,211,153,0.45)]">
                   <CheckCircle2 className="w-10 h-10 text-emerald-400" />
                 </div>
               </div>

@@ -148,6 +148,7 @@ export interface ExitDoc {
   carrier: string;
   goods: string;
   brand: string;
+  mdfThickness?: string;
   trailers: number;
   pallets: number;
   batchId: string;

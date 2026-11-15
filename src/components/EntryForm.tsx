@@ -1,10 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import { HelpCircle, FilePlus, Save, TestTube } from 'lucide-react';
+import { FilePlus, Save } from 'lucide-react';
 import { EntryDoc, JalaliDate } from '../types';
 import { JalaliDatePicker } from './JalaliDatePicker';
 import { ComboboxField } from './ComboboxField';
-import { en, parseJ, todayJ, fa } from '../utils/jalali';
-import { calculateSplit9010, inferMdfThickness } from '../utils/clearance9010';
+import { en, todayJ } from '../utils/jalali';
 
 interface EntryFormProps {
   editingDoc: EntryDoc | null;
@@ -30,7 +29,6 @@ export const EntryForm: React.FC<EntryFormProps> = ({
   editingDoc,
   onSubmit,
   onCancelEdit,
-  onSeedDemo,
   importers,
   carriers,
   goodsList,
@@ -52,7 +50,6 @@ export const EntryForm: React.FC<EntryFormProps> = ({
   const [carrier, setCarrier] = useState('');
   const [goods, setGoods] = useState('');
   const [brand, setBrand] = useState('');
-  const [mdfThickness, setMdfThickness] = useState('');
   const [unloadDate, setUnloadDate] = useState<JalaliDate>(todayJ());
   const [trailers, setTrailers] = useState('5');
   const [pallets, setPallets] = useState('40');
@@ -69,7 +66,6 @@ export const EntryForm: React.FC<EntryFormProps> = ({
       setCarrier(editingDoc.carrier);
       setGoods(editingDoc.goods);
       setBrand(editingDoc.brand || '');
-      setMdfThickness(editingDoc.mdfThickness || inferMdfThickness(editingDoc.goods || ''));
       setUnloadDate(editingDoc.unloadDate);
       setTrailers(String(editingDoc.trailers));
       setPallets(String(editingDoc.pallets || '0'));
@@ -82,7 +78,6 @@ export const EntryForm: React.FC<EntryFormProps> = ({
       setCarrier('');
       setGoods('');
       setBrand('');
-      setMdfThickness('');
       setUnloadDate(todayJ());
       setTrailers('5');
       setPallets('40');
@@ -139,13 +134,12 @@ export const EntryForm: React.FC<EntryFormProps> = ({
       carrier,
       goods,
       brand,
-      mdfThickness: mdfThickness.trim() || inferMdfThickness(goods),
+      mdfThickness: editingDoc?.mdfThickness,
       unloadDate,
       trailers: parseInt(en(trailers), 10) || 1,
       pallets: totalPalletsInt,
     });
 
-    // Reset form inputs after submitting
     setCottage('');
     setBl('');
     setFile('');
@@ -153,19 +147,16 @@ export const EntryForm: React.FC<EntryFormProps> = ({
     setCarrier('');
     setGoods('');
     setBrand('');
-    setMdfThickness('');
     setUnloadDate(todayJ());
     setTrailers('5');
     setPallets('40');
     setErrors({});
   };
 
-  const previewSplit = calculateSplit9010(Math.max(0, Math.floor(Number(en(pallets)) || 0)));
-
   return (
-    <aside className="ios-glass-card ios-specular p-5 sm:p-6 rounded-3xl border border-white/20 shadow-[0_25px_60px_-15px_rgba(0,0,0,0.85)] sticky top-24 backdrop-blur-3xl">
+    <aside className="ios-glass-card ios-specular p-4 sm:p-6 rounded-3xl border border-white/20 shadow-[0_25px_60px_-15px_rgba(0,0,0,0.85)] lg:sticky lg:top-20">
       <div className="flex items-center gap-3 pb-4 mb-5 border-b border-white/10">
-        <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-amber-500/25 to-orange-500/15 border border-amber-400/40 text-amber-300 flex items-center justify-center shadow-lg shadow-amber-500/15 backdrop-blur-xl">
+        <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-amber-500/25 to-orange-500/15 border border-amber-400/40 text-amber-300 flex items-center justify-center shadow-lg shadow-amber-500/15">
           <FilePlus className="w-5 h-5" />
         </div>
         <div>
@@ -180,20 +171,20 @@ export const EntryForm: React.FC<EntryFormProps> = ({
 
       <form onSubmit={handleSubmit} className="space-y-4">
         {/* Row 1: Cottage & BL */}
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <div className="space-y-1">
             <label className="block text-xs font-medium text-slate-300 flex items-center gap-1">
               شماره کوتاژ <span className="text-amber-400">*</span>
               <button
                 type="button"
                 onClick={() => setActiveHint(activeHint === 'cottage' ? null : 'cottage')}
-                className="text-cyan-400 border border-dashed border-cyan-400/50 rounded-full text-[10px] px-1 hover:bg-cyan-400/10"
+                className="text-cyan-400 border border-dashed border-cyan-400/50 rounded-full text-[10px] px-1.5 py-0.5 hover:bg-cyan-400/10"
               >
                 ؟
               </button>
             </label>
             {activeHint === 'cottage' && (
-              <p className="text-[10px] text-cyan-200 bg-cyan-950/40 p-2.5 rounded-xl border border-cyan-400/30 backdrop-blur-md">
+              <p className="text-[10px] text-cyan-200 bg-cyan-950/60 p-2.5 rounded-xl border border-cyan-400/30">
                 شناسه ۷ رقمی عددی و یکتا برای اظهارنامه گمرکی
               </p>
             )}
@@ -204,7 +195,7 @@ export const EntryForm: React.FC<EntryFormProps> = ({
               value={cottage}
               onChange={(e) => setCottage(e.target.value)}
               placeholder="1402234"
-              className={`w-full glass-input rounded-xl px-3 py-2.5 text-sm ltr text-left outline-none ${
+              className={`w-full glass-input rounded-xl px-3 py-2.5 text-sm ltr text-left outline-none min-h-[44px] ${
                 errors.cottage ? 'border-rose-500 ring-2 ring-rose-500/20' : ''
               }`}
             />
@@ -217,13 +208,13 @@ export const EntryForm: React.FC<EntryFormProps> = ({
               <button
                 type="button"
                 onClick={() => setActiveHint(activeHint === 'bl' ? null : 'bl')}
-                className="text-cyan-400 border border-dashed border-cyan-400/50 rounded-full text-[10px] px-1 hover:bg-cyan-400/10"
+                className="text-cyan-400 border border-dashed border-cyan-400/50 rounded-full text-[10px] px-1.5 py-0.5 hover:bg-cyan-400/10"
               >
                 ؟
               </button>
             </label>
             {activeHint === 'bl' && (
-              <p className="text-[10px] text-cyan-200 bg-cyan-950/40 p-2.5 rounded-xl border border-cyan-400/30 backdrop-blur-md">
+              <p className="text-[10px] text-cyan-200 bg-cyan-950/60 p-2.5 rounded-xl border border-cyan-400/30">
                 با SEETEC شروع می‌شود و با ۵ رقم تمام می‌شود
               </p>
             )}
@@ -233,7 +224,7 @@ export const EntryForm: React.FC<EntryFormProps> = ({
               value={bl}
               onChange={(e) => setBl(e.target.value.toUpperCase())}
               placeholder="SEETEC05022"
-              className={`w-full glass-input rounded-xl px-3 py-2.5 text-sm ltr text-left outline-none uppercase font-mono ${
+              className={`w-full glass-input rounded-xl px-3 py-2.5 text-sm ltr text-left outline-none uppercase font-mono min-h-[44px] ${
                 errors.bl ? 'border-rose-500 ring-2 ring-rose-500/20' : ''
               }`}
             />
@@ -242,7 +233,7 @@ export const EntryForm: React.FC<EntryFormProps> = ({
         </div>
 
         {/* Row 2: File & Date */}
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <div className="space-y-1">
             <label className="block text-xs font-medium text-slate-300">
               شماره پرونده <span className="text-amber-400">*</span>
@@ -254,7 +245,7 @@ export const EntryForm: React.FC<EntryFormProps> = ({
               value={file}
               onChange={(e) => setFile(e.target.value)}
               placeholder="405101"
-              className={`w-full glass-input rounded-xl px-3 py-2.5 text-sm ltr text-left outline-none ${
+              className={`w-full glass-input rounded-xl px-3 py-2.5 text-sm ltr text-left outline-none min-h-[44px] ${
                 errors.file ? 'border-rose-500 ring-2 ring-rose-500/20' : ''
               }`}
             />
@@ -328,7 +319,7 @@ export const EntryForm: React.FC<EntryFormProps> = ({
               value={trailers}
               onChange={(e) => setTrailers(e.target.value)}
               placeholder="مثلاً 5"
-              className={`w-full glass-input rounded-xl px-3 py-2.5 text-sm outline-none ${
+              className={`w-full glass-input rounded-xl px-3 py-2.5 text-sm outline-none min-h-[44px] ${
                 errors.trailers ? 'border-rose-500 ring-2 ring-rose-500/20' : ''
               }`}
             />
@@ -344,60 +335,8 @@ export const EntryForm: React.FC<EntryFormProps> = ({
               value={pallets}
               onChange={(e) => setPallets(e.target.value.replace(/[^\d۰-۹]/g, ''))}
               placeholder="مثلاً 101"
-              className="w-full glass-input rounded-xl px-3 py-2.5 text-sm outline-none font-mono"
+              className="w-full glass-input rounded-xl px-3 py-2.5 text-sm outline-none font-mono min-h-[44px]"
             />
-          </div>
-        </div>
-
-        {/* MDF Thickness & Live 90/10 Allocation Preview */}
-        <div className="p-3.5 rounded-2xl bg-slate-950/60 border border-white/10 space-y-3">
-          <div className="space-y-1.5">
-            <div className="flex items-center justify-between gap-2">
-              <label className="block text-xs font-medium text-slate-300">
-                ضخامت MDF (میلی‌متر)
-              </label>
-              <div className="flex items-center gap-1 flex-wrap">
-                {['16mm', '18mm', '8mm', '3mm'].map((th) => (
-                  <button
-                    key={th}
-                    type="button"
-                    onClick={() => setMdfThickness(th)}
-                    className={`px-2 py-0.5 rounded-lg text-[10px] font-mono font-bold border transition-all cursor-pointer ${
-                      mdfThickness === th
-                        ? 'bg-cyan-500/25 border-cyan-400 text-cyan-200'
-                        : 'bg-white/5 border-white/10 text-slate-400 hover:text-slate-200'
-                    }`}
-                  >
-                    {th}
-                  </button>
-                ))}
-              </div>
-            </div>
-            <input
-              type="text"
-              value={mdfThickness}
-              onChange={(e) => setMdfThickness(e.target.value)}
-              placeholder="مثلاً 16mm یا 18mm (در صورت خالی بودن از نام کالا تشخیص داده می‌شود)"
-              className="w-full glass-input rounded-xl px-3 py-2 text-xs ltr text-left outline-none font-mono"
-            />
-          </div>
-
-          {/* 90/10 Integer Allocation Preview */}
-          <div className="pt-2 border-t border-white/10 space-y-2">
-            <div className="flex items-center justify-between text-[11px]">
-              <span className="text-slate-400 font-medium">محاسبه خودکار سهمیه ۹۰٪ / ۱۰٪ (عدد صحیح):</span>
-              <span className="font-mono font-bold text-slate-200">{fa(previewSplit.totalPallets)} پالت</span>
-            </div>
-            <div className="grid grid-cols-2 gap-2 text-center text-xs">
-              <div className="bg-emerald-500/10 border border-emerald-500/25 rounded-xl p-2">
-                <span className="text-[10px] text-emerald-300 block">مرحله اول (۹۰٪)</span>
-                <b className="font-mono text-sm text-emerald-200">{fa(previewSplit.firstStagePallets)} پالت</b>
-              </div>
-              <div className="bg-amber-500/10 border border-amber-500/25 rounded-xl p-2">
-                <span className="text-[10px] text-amber-300 block">باقی‌مانده ۱۰٪ (قفل ساتا)</span>
-                <b className="font-mono text-sm text-amber-200">{fa(previewSplit.remainingPallets)} پالت</b>
-              </div>
-            </div>
           </div>
         </div>
 
@@ -405,7 +344,7 @@ export const EntryForm: React.FC<EntryFormProps> = ({
         <div className="space-y-2.5 pt-2">
           <button
             type="submit"
-            className="w-full py-3 px-4 rounded-xl ios-glass-btn-primary flex items-center justify-center gap-2 cursor-pointer active:scale-98"
+            className="w-full min-h-[44px] py-3 px-4 rounded-xl ios-glass-btn-primary flex items-center justify-center gap-2 cursor-pointer active:scale-98"
           >
             <Save className="w-4 h-4" />
             <span>{editingDoc ? 'بروزرسانی سند ورود' : 'ذخیره سند ورود'}</span>
@@ -415,7 +354,7 @@ export const EntryForm: React.FC<EntryFormProps> = ({
             <button
               type="button"
               onClick={onCancelEdit}
-              className="w-full py-2.5 px-4 rounded-xl ios-glass-btn text-slate-300 hover:text-white transition-all text-xs font-semibold cursor-pointer"
+              className="w-full min-h-[44px] py-2.5 px-4 rounded-xl ios-glass-btn text-slate-300 hover:text-white transition-all text-xs font-semibold cursor-pointer"
             >
               انصراف از ویرایش
             </button>

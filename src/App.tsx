@@ -21,6 +21,9 @@ import { CloudDbSyncModal } from './components/CloudDbSyncModal';
 import { Clearance9010Drawer } from './components/Clearance9010Drawer';
 import { NotificationCenterDrawer } from './components/NotificationCenterDrawer';
 import { DailyTasksDrawer } from './components/DailyTasksDrawer';
+import { PWAInstallGate } from './components/PWAInstallGate';
+import { OfflineIndicator } from './components/OfflineIndicator';
+import { useDeviceEnvironment } from './hooks/useDeviceEnvironment';
 import {
   initializeSecurity,
   getIdleTimeoutMinutes,
@@ -56,7 +59,13 @@ import {
   DEFAULT_BRANDS,
 } from './utils/storage';
 import { fa, uid, todayJ, en, j2d, d2j, jMonthLen } from './utils/jalali';
-import { inferMdfThickness, normalizeEntryClearance } from './utils/clearance9010';
+import {
+  CLEARANCE_STATUS_META,
+  computePalletBalances,
+  deriveClearanceStatus,
+  inferMdfThickness,
+  normalizeEntryClearance,
+} from './utils/clearance9010';
 import { generateNotifications, generateAutoFollowUpTasks, matchesTaskView } from './utils/workflowEngine';
 import { isSupabaseConfigured } from './lib/supabase';
 import {
@@ -96,9 +105,26 @@ import {
   X,
   ListFilter,
   PlusCircle,
+  ShieldCheck,
 } from 'lucide-react';
 
 export default function App() {
+  const device = useDeviceEnvironment();
+  const [previewBypassed, setPreviewBypassed] = useState<boolean>(() => {
+    try {
+      return sessionStorage.getItem('ctm_preview_bypass') === '1';
+    } catch {
+      return false;
+    }
+  });
+
+  const handleBypassPreview = () => {
+    try {
+      sessionStorage.setItem('ctm_preview_bypass', '1');
+    } catch {}
+    setPreviewBypassed(true);
+  };
+
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() => {
     return sessionStorage.getItem('gm_auth') === '1';
   });
@@ -767,7 +793,7 @@ export default function App() {
       const mergedBase: EntryDoc = {
         ...editingDoc,
         ...data,
-        mdfThickness: data.mdfThickness || inferMdfThickness(data.goods),
+        mdfThickness: data.mdfThickness || editingDoc.mdfThickness || inferMdfThickness(data.goods),
         unloaded: Math.min(editingDoc.unloaded, data.trailers),
       };
       const updatedDoc: EntryDoc = {
@@ -1938,15 +1964,27 @@ export default function App() {
       return;
     }
     if (notif.relatedRecordType === 'entry' && notif.relatedRecordId) {
-      handleNavigateToEntryDoc(notif.relatedRecordId);
       const open9010Categories: AppNotification['category'][] = [
         'remaining_10_awaiting_sata',
         'sata_received_unconfirmed',
         'cleared_not_exited',
         'remaining_pallets_followup',
+        'overdue_clearance',
       ];
       if (open9010Categories.includes(notif.category)) {
+        const linkedExit = exits.find(
+          (x) => x.entryDocId === notif.relatedRecordId || (x.cottage && x.cottage === notif.cottage)
+        );
+        if (linkedExit) {
+          handleNavigateToExitDoc(linkedExit.id);
+        } else {
+          setMainTab('exit');
+          setExitSubTab('docs');
+          setMobileExitMode('list');
+        }
         setTimeout(() => setClearanceDrawerDocId(notif.relatedRecordId || null), 220);
+      } else {
+        handleNavigateToEntryDoc(notif.relatedRecordId);
       }
     }
   };
@@ -2032,29 +2070,36 @@ export default function App() {
       ].some((val) => en(String(val || '').toLowerCase()).includes(q));
     });
 
+  // Require PWA install on mobile web browsers unless running in preview bypass mode
+  if (device.deviceType === 'mobile' && !device.isStandalone && !previewBypassed) {
+    return (
+      <>
+        <OfflineIndicator />
+        <PWAInstallGate device={device} onBypassPreview={handleBypassPreview} />
+      </>
+    );
+  }
+
   // Render Login Gate if not authenticated or during logout animation
   if (!isAuthenticated || isLoggingOut) {
     return (
-      <LoginGate
-        onSuccess={handleLoginSuccess}
-        isLoggingOut={isLoggingOut}
-        onLogoutComplete={handleLogoutComplete}
-      />
+      <>
+        <OfflineIndicator />
+        <LoginGate
+          onSuccess={handleLoginSuccess}
+          isLoggingOut={isLoggingOut}
+          onLogoutComplete={handleLogoutComplete}
+        />
+      </>
     );
   }
 
   return (
-    <div className="min-h-[100dvh] bg-transparent text-[#f1f5f9] pb-24 relative overflow-x-clip selection:bg-cyan-500/30">
-      {/* Radiant Multi-spectrum Ambient Aurora Orbs (Isolated GPU Layer - Zero Scroll Repaint) */}
-      <div className="fixed inset-0 overflow-hidden pointer-events-none z-0 [contain:strict] [transform:translate3d(0,0,0)]" aria-hidden="true">
-        <div className="absolute top-[-15%] right-[-10%] w-[62vw] h-[62vw] max-w-[700px] max-h-[700px] bg-gradient-to-br from-cyan-400/20 via-blue-600/12 to-transparent rounded-full blur-[80px] sm:blur-[120px] [transform:translate3d(0,0,0)]" />
-        <div className="absolute bottom-[-18%] left-[-12%] w-[68vw] h-[68vw] max-w-[800px] max-h-[800px] bg-gradient-to-tr from-purple-600/18 via-indigo-600/10 to-transparent rounded-full blur-[90px] sm:blur-[130px] [transform:translate3d(0,0,0)]" />
-        <div className="absolute top-[26%] left-[10%] w-[42vw] h-[42vw] max-w-[500px] max-h-[500px] bg-gradient-to-br from-amber-400/12 to-orange-500/6 rounded-full blur-[70px] sm:blur-[100px] [transform:translate3d(0,0,0)]" />
-        <div className="absolute bottom-[18%] right-[8%] w-[38vw] h-[38vw] max-w-[460px] max-h-[460px] bg-gradient-to-tr from-emerald-400/12 to-teal-500/6 rounded-full blur-[70px] sm:blur-[100px] [transform:translate3d(0,0,0)]" />
-      </div>
+    <div className="min-h-[100svh] bg-transparent text-[#f1f5f9] pb-20 sm:pb-24 pb-safe relative overflow-x-clip selection:bg-cyan-500/30">
+      <OfflineIndicator />
 
       {/* Top Bar */}
-      <div className="relative z-10">
+      <div className="relative z-20">
         <Navbar
           onLogout={handleLogout}
           onOpenCloudDb={activePermissions.canAccessCloudDb ? () => setIsCloudDbModalOpen(true) : undefined}
@@ -2076,17 +2121,16 @@ export default function App() {
         />
       </div>
 
-      {/* Tabs Navigation - iOS 27 VisionOS Floating Glass Capsule Dock */}
+      {/* Tabs Navigation - Floating Glass Capsule Dock */}
       <nav className="relative z-10 max-w-[1460px] mx-auto px-3 sm:px-6 pt-3 sm:pt-5">
         <div className="flex items-center justify-between pb-3 sm:pb-4 border-b border-white/8">
-          <div className="w-full sm:w-auto ios-glass-pill p-1.5 sm:p-2 rounded-2xl sm:rounded-full grid grid-cols-2 sm:grid-cols-4 lg:flex lg:items-center gap-1.5 sm:gap-2 shadow-[0_20px_45px_-10px_rgba(0,0,0,0.8),inset_0_1.5px_0.5px_rgba(255,255,255,0.4)]">
+          <div className="w-full sm:w-auto ios-glass-pill p-1.5 sm:p-2 rounded-2xl sm:rounded-full grid grid-cols-2 sm:grid-cols-4 lg:flex lg:items-center gap-1.5 sm:gap-2">
             {/* Section 1: ورود کالا */}
             {activePermissions.canViewEntry && (
               <motion.button
-                whileHover={{ scale: 1.02 }}
                 whileTap={{ scale: 0.97 }}
                 onClick={() => setMainTab('entry')}
-                className={`relative flex items-center justify-center sm:justify-start gap-1.5 sm:gap-2 px-3 sm:px-5 py-2 sm:py-2.5 rounded-xl sm:rounded-full font-bold transition-all duration-200 cursor-pointer ${
+                className={`relative min-h-[44px] flex items-center justify-center sm:justify-start gap-1.5 sm:gap-2 px-3 sm:px-5 py-2 sm:py-2.5 rounded-xl sm:rounded-full font-bold transition-colors duration-200 cursor-pointer ${
                   mainTab === 'entry'
                     ? 'text-white'
                     : 'text-slate-400 hover:text-slate-200 hover:bg-white/5'
@@ -2095,8 +2139,8 @@ export default function App() {
                 {mainTab === 'entry' && (
                   <motion.div
                     layoutId="mainTabIndicator"
-                    className="absolute inset-0 rounded-xl sm:rounded-full bg-gradient-to-b from-cyan-400/35 via-cyan-500/20 to-transparent border border-cyan-300/60 shadow-[0_4px_20px_rgba(6,182,212,0.35),inset_0_1.5px_1px_rgba(255,255,255,0.4)] backdrop-blur-xl"
-                    transition={{ type: 'spring', bounce: 0.15, duration: 0.4 }}
+                    className="absolute inset-0 rounded-xl sm:rounded-full bg-gradient-to-b from-cyan-400/35 via-cyan-500/20 to-transparent border border-cyan-300/60"
+                    transition={{ type: 'spring', bounce: 0.15, duration: 0.35 }}
                   />
                 )}
                 <div className={`relative z-10 w-6 h-6 sm:w-7 sm:h-7 rounded-full flex items-center justify-center transition-colors ${
@@ -2120,10 +2164,9 @@ export default function App() {
             {/* Section 2: خروج کالا */}
             {activePermissions.canViewExit && (
               <motion.button
-                whileHover={{ scale: 1.02 }}
                 whileTap={{ scale: 0.97 }}
                 onClick={() => setMainTab('exit')}
-                className={`relative flex items-center justify-center sm:justify-start gap-1.5 sm:gap-2 px-3 sm:px-5 py-2 sm:py-2.5 rounded-xl sm:rounded-full font-bold transition-all duration-200 cursor-pointer ${
+                className={`relative min-h-[44px] flex items-center justify-center sm:justify-start gap-1.5 sm:gap-2 px-3 sm:px-5 py-2 sm:py-2.5 rounded-xl sm:rounded-full font-bold transition-colors duration-200 cursor-pointer ${
                   mainTab === 'exit'
                     ? 'text-white'
                     : 'text-slate-400 hover:text-slate-200 hover:bg-white/5'
@@ -2132,21 +2175,21 @@ export default function App() {
                 {mainTab === 'exit' && (
                   <motion.div
                     layoutId="mainTabIndicator"
-                    className="absolute inset-0 rounded-xl sm:rounded-full bg-gradient-to-b from-blue-500/35 via-indigo-500/20 to-transparent border border-blue-400/60 shadow-[0_4px_20px_rgba(59,130,246,0.35),inset_0_1.5px_1px_rgba(255,255,255,0.4)] backdrop-blur-xl"
-                    transition={{ type: 'spring', bounce: 0.15, duration: 0.4 }}
+                    className="absolute inset-0 rounded-xl sm:rounded-full bg-gradient-to-b from-blue-500/35 via-indigo-500/20 to-transparent border border-blue-400/60"
+                    transition={{ type: 'spring', bounce: 0.15, duration: 0.35 }}
                   />
                 )}
                 <div className={`relative z-10 w-6 h-6 sm:w-7 sm:h-7 rounded-full flex items-center justify-center transition-colors ${
-                  mainTab === 'exit' ? 'bg-blue-500/25 text-blue-200 shadow-[0_0_10px_rgba(59,130,246,0.6)]' : 'bg-white/5 text-slate-400'
+                  mainTab === 'exit' ? 'bg-blue-500/25 text-blue-200' : 'bg-white/5 text-slate-400'
                 }`}>
                   <LogOut className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-blue-400" />
                 </div>
-                <span className="relative z-10 font-lalezar text-xs sm:text-sm md:text-base tracking-wide whitespace-nowrap drop-shadow-xs">
+                <span className="relative z-10 font-lalezar text-xs sm:text-sm md:text-base tracking-wide whitespace-nowrap">
                   خروج کالا
                 </span>
                 <span className={`relative z-10 hidden md:inline-flex text-[10px] px-2 py-0.5 rounded-full font-mono font-bold border transition-colors ${
                   mainTab === 'exit'
-                    ? 'bg-blue-500/20 border-blue-400/50 text-blue-200 shadow-xs'
+                    ? 'bg-blue-500/20 border-blue-400/50 text-blue-200'
                     : 'bg-white/5 border-white/10 text-slate-400'
                 }`}>
                   {fa(exits.length)}
@@ -2157,10 +2200,9 @@ export default function App() {
             {/* Section 3: گزارش‌گیری */}
             {activePermissions.canViewReports && (
               <motion.button
-                whileHover={{ scale: 1.02 }}
                 whileTap={{ scale: 0.97 }}
                 onClick={() => setMainTab('reports')}
-                className={`relative flex items-center justify-center sm:justify-start gap-1.5 sm:gap-2 px-3 sm:px-5 py-2 sm:py-2.5 rounded-xl sm:rounded-full font-bold transition-all duration-200 cursor-pointer ${
+                className={`relative min-h-[44px] flex items-center justify-center sm:justify-start gap-1.5 sm:gap-2 px-3 sm:px-5 py-2 sm:py-2.5 rounded-xl sm:rounded-full font-bold transition-colors duration-200 cursor-pointer ${
                   mainTab === 'reports'
                     ? 'text-white'
                     : 'text-slate-400 hover:text-slate-200 hover:bg-white/5'
@@ -2169,21 +2211,21 @@ export default function App() {
                 {mainTab === 'reports' && (
                   <motion.div
                     layoutId="mainTabIndicator"
-                    className="absolute inset-0 rounded-xl sm:rounded-full bg-gradient-to-b from-emerald-500/35 via-teal-500/20 to-transparent border border-emerald-400/60 shadow-[0_4px_20px_rgba(16,185,129,0.35),inset_0_1.5px_1px_rgba(255,255,255,0.4)] backdrop-blur-xl"
-                    transition={{ type: 'spring', bounce: 0.15, duration: 0.4 }}
+                    className="absolute inset-0 rounded-xl sm:rounded-full bg-gradient-to-b from-emerald-500/35 via-teal-500/20 to-transparent border border-emerald-400/60"
+                    transition={{ type: 'spring', bounce: 0.15, duration: 0.35 }}
                   />
                 )}
                 <div className={`relative z-10 w-6 h-6 sm:w-7 sm:h-7 rounded-full flex items-center justify-center transition-colors ${
-                  mainTab === 'reports' ? 'bg-emerald-500/25 text-emerald-200 shadow-[0_0_10px_rgba(16,185,129,0.6)]' : 'bg-white/5 text-slate-400'
+                  mainTab === 'reports' ? 'bg-emerald-500/25 text-emerald-200' : 'bg-white/5 text-slate-400'
                 }`}>
                   <BarChart3 className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-emerald-400" />
                 </div>
-                <span className="relative z-10 font-lalezar text-xs sm:text-sm md:text-base tracking-wide whitespace-nowrap drop-shadow-xs">
+                <span className="relative z-10 font-lalezar text-xs sm:text-sm md:text-base tracking-wide whitespace-nowrap">
                   گزارش‌گیری
                 </span>
                 <span className={`relative z-10 hidden md:inline-flex text-[10px] px-2 py-0.5 rounded-full font-mono font-bold border transition-colors ${
                   mainTab === 'reports'
-                    ? 'bg-emerald-500/25 border-emerald-400/50 text-emerald-200 shadow-xs'
+                    ? 'bg-emerald-500/25 border-emerald-400/50 text-emerald-200'
                     : 'bg-white/5 border-white/10 text-slate-400'
                 }`}>
                   تحلیلی
@@ -2194,10 +2236,9 @@ export default function App() {
             {/* Section 4: بانک نامه‌ها و الگوهای گمرکی */}
             {activePermissions.canViewLetters !== false && (
               <motion.button
-                whileHover={{ scale: 1.02 }}
                 whileTap={{ scale: 0.97 }}
                 onClick={() => setMainTab('letters')}
-                className={`relative flex items-center justify-center sm:justify-start gap-1.5 sm:gap-2 px-3 sm:px-5 py-2 sm:py-2.5 rounded-xl sm:rounded-full font-bold transition-all duration-200 cursor-pointer ${
+                className={`relative min-h-[44px] flex items-center justify-center sm:justify-start gap-1.5 sm:gap-2 px-3 sm:px-5 py-2 sm:py-2.5 rounded-xl sm:rounded-full font-bold transition-colors duration-200 cursor-pointer ${
                   mainTab === 'letters'
                     ? 'text-white'
                     : 'text-slate-400 hover:text-slate-200 hover:bg-white/5'
@@ -2206,8 +2247,8 @@ export default function App() {
                 {mainTab === 'letters' && (
                   <motion.div
                     layoutId="mainTabIndicator"
-                    className="absolute inset-0 rounded-xl sm:rounded-full bg-gradient-to-b from-amber-500/35 via-orange-500/20 to-transparent border border-amber-400/60 shadow-[0_4px_20px_rgba(245,158,11,0.35),inset_0_1.5px_1px_rgba(255,255,255,0.4)] backdrop-blur-xl"
-                    transition={{ type: 'spring', bounce: 0.15, duration: 0.4 }}
+                    className="absolute inset-0 rounded-xl sm:rounded-full bg-gradient-to-b from-amber-500/35 via-orange-500/20 to-transparent border border-amber-400/60"
+                    transition={{ type: 'spring', bounce: 0.15, duration: 0.35 }}
                   />
                 )}
                 <div className={`relative z-10 w-6 h-6 sm:w-7 sm:h-7 rounded-full flex items-center justify-center transition-colors ${
@@ -2244,14 +2285,14 @@ export default function App() {
               transition={{ duration: 0.24, ease: 'easeOut' }}
               className="space-y-5 sm:space-y-6"
             >
-              {/* Sub-Tabs for Goods Entry (iOS 27 Floating Glass Pill Bar) */}
-              <div className="flex items-center gap-1.5 sm:gap-2 ios-glass-pill p-1.5 rounded-full w-fit max-w-full overflow-x-auto no-scrollbar shadow-lg">
+              {/* Sub-Tabs for Goods Entry */}
+              <div className="flex items-center gap-1.5 sm:gap-2 ios-glass-pill p-1.5 rounded-full w-fit max-w-full overflow-x-auto no-scrollbar">
                 <motion.button
                   whileTap={{ scale: 0.97 }}
                   onClick={() => setEntrySubTab('docs')}
-                  className={`flex items-center gap-1.5 sm:gap-2 px-3.5 sm:px-4 py-1.5 sm:py-2 rounded-full text-xs sm:text-sm font-bold shrink-0 transition-all ${
+                  className={`min-h-[40px] flex items-center gap-1.5 sm:gap-2 px-3.5 sm:px-4 py-1.5 sm:py-2 rounded-full text-xs sm:text-sm font-bold shrink-0 transition-colors ${
                     entrySubTab === 'docs'
-                      ? 'bg-gradient-to-b from-cyan-400/30 to-cyan-500/15 text-cyan-200 border border-cyan-400/60 shadow-md shadow-cyan-500/20 backdrop-blur-xl'
+                      ? 'bg-gradient-to-b from-cyan-400/30 to-cyan-500/15 text-cyan-200 border border-cyan-400/60'
                       : 'text-slate-400 hover:text-slate-200 hover:bg-white/5 border border-transparent'
                   }`}
                 >
@@ -2262,9 +2303,9 @@ export default function App() {
                 <motion.button
                   whileTap={{ scale: 0.97 }}
                   onClick={() => setEntrySubTab('consolidation')}
-                  className={`flex items-center gap-1.5 sm:gap-2 px-3.5 sm:px-4 py-1.5 sm:py-2 rounded-full text-xs sm:text-sm font-bold shrink-0 transition-all ${
+                  className={`min-h-[40px] flex items-center gap-1.5 sm:gap-2 px-3.5 sm:px-4 py-1.5 sm:py-2 rounded-full text-xs sm:text-sm font-bold shrink-0 transition-colors ${
                     entrySubTab === 'consolidation'
-                      ? 'bg-gradient-to-b from-amber-400/30 to-orange-500/15 text-amber-200 border border-amber-400/60 shadow-md shadow-amber-500/20 backdrop-blur-xl'
+                      ? 'bg-gradient-to-b from-amber-400/30 to-orange-500/15 text-amber-200 border border-amber-400/60'
                       : 'text-slate-400 hover:text-slate-200 hover:bg-white/5 border border-transparent'
                   }`}
                 >
@@ -2283,13 +2324,13 @@ export default function App() {
                 </div>
 
                 {/* Mobile View Mode Switcher (< lg) */}
-                <div className="lg:hidden flex items-center gap-1.5 p-1 bg-white/5 border border-white/10 rounded-2xl backdrop-blur-md">
+                <div className="lg:hidden flex items-center gap-1.5 p-1 bg-white/5 border border-white/10 rounded-2xl">
                   <button
                     type="button"
                     onClick={() => setMobileEntryMode('list')}
-                    className={`flex-1 py-2.5 px-3 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2 ${
+                    className={`min-h-[44px] flex-1 py-2.5 px-3 rounded-xl text-xs font-bold transition-colors flex items-center justify-center gap-2 ${
                       mobileEntryMode === 'list'
-                        ? 'bg-gradient-to-r from-cyan-500/30 to-blue-500/20 text-cyan-200 border border-cyan-400/50 shadow-md'
+                        ? 'bg-gradient-to-r from-cyan-500/30 to-blue-500/20 text-cyan-200 border border-cyan-400/50'
                         : 'text-slate-400 hover:text-slate-200'
                     }`}
                   >
@@ -2299,9 +2340,9 @@ export default function App() {
                   <button
                     type="button"
                     onClick={() => setMobileEntryMode('form')}
-                    className={`flex-1 py-2.5 px-3 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2 ${
+                    className={`min-h-[44px] flex-1 py-2.5 px-3 rounded-xl text-xs font-bold transition-colors flex items-center justify-center gap-2 ${
                       mobileEntryMode === 'form'
-                        ? 'bg-gradient-to-r from-amber-500/30 to-amber-600/20 text-amber-200 border border-amber-400/50 shadow-md'
+                        ? 'bg-gradient-to-r from-amber-500/30 to-amber-600/20 text-amber-200 border border-amber-400/50'
                         : 'text-slate-400 hover:text-slate-200'
                     }`}
                   >
@@ -2383,7 +2424,7 @@ export default function App() {
                           <Calendar className="w-4 h-4 text-amber-400" />
                           <span>بازه زمانی</span>
                           {(entryStartDate || entryEndDate) && (
-                            <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse" />
+                            <span className="w-2 h-2 rounded-full bg-amber-400" />
                           )}
                         </button>
                       </div>
@@ -2402,9 +2443,9 @@ export default function App() {
                             <button
                               key={f.id}
                               onClick={() => setEntryFilter(f.id as EntryFilterType)}
-                              className={`px-3 py-1.5 rounded-xl border transition-all ${
+                              className={`min-h-[36px] px-3 py-1.5 rounded-xl border transition-colors ${
                                 entryFilter === f.id
-                                  ? 'bg-cyan-500/20 text-cyan-300 font-bold border-cyan-500/40 shadow-sm shadow-cyan-500/20 backdrop-blur-md'
+                                  ? 'bg-cyan-500/20 text-cyan-300 font-bold border-cyan-500/40'
                                   : 'border-white/10 text-slate-400 hover:text-white hover:bg-white/5'
                               }`}
                             >
@@ -2531,7 +2572,6 @@ export default function App() {
                               key={doc.id}
                               doc={doc}
                               batch={batch}
-                              physicalExits={physicalExits}
                               isHighlighted={highlightedEntryId === doc.id}
                               canEdit={activePermissions.canEditEntry}
                               canDelete={activePermissions.canDeleteItems}
@@ -2578,7 +2618,6 @@ export default function App() {
                                 handleToggleTask(id, taskKey);
                               }}
                               onMarkComplete={handleMarkDocComplete}
-                              onOpenClearance9010={(targetDoc) => setClearanceDrawerDocId(targetDoc.id)}
                               onCreateFollowUpTask={(targetDoc) => {
                                 setTaskPrefillDoc(targetDoc);
                                 setIsDailyTasksDrawerOpen(true);
@@ -2619,27 +2658,27 @@ export default function App() {
               transition={{ duration: 0.24, ease: 'easeOut' }}
               className="space-y-5 sm:space-y-6"
             >
-              {/* Sub-Tabs for Goods Exit (iOS 27 Floating Glass Pill Bar) */}
-              <div className="flex items-center gap-1.5 sm:gap-2 ios-glass-pill p-1.5 rounded-full w-fit max-w-full overflow-x-auto no-scrollbar shadow-lg">
+              {/* Sub-Tabs for Goods Exit */}
+              <div className="flex items-center gap-1.5 sm:gap-2 ios-glass-pill p-1.5 rounded-full w-fit max-w-full overflow-x-auto no-scrollbar">
                 <motion.button
                   whileTap={{ scale: 0.97 }}
                   onClick={() => setExitSubTab('docs')}
-                  className={`flex items-center gap-1.5 sm:gap-2 px-3.5 sm:px-4 py-1.5 sm:py-2 rounded-full text-xs sm:text-sm font-bold shrink-0 transition-all ${
+                  className={`min-h-[40px] flex items-center gap-1.5 sm:gap-2 px-3.5 sm:px-4 py-1.5 sm:py-2 rounded-full text-xs sm:text-sm font-bold shrink-0 transition-colors ${
                     exitSubTab === 'docs'
-                      ? 'bg-gradient-to-b from-blue-500/35 to-indigo-500/20 text-blue-200 border border-blue-400/60 shadow-md shadow-blue-500/20 backdrop-blur-xl'
+                      ? 'bg-gradient-to-b from-blue-500/35 to-indigo-500/20 text-blue-200 border border-blue-400/60'
                       : 'text-slate-400 hover:text-slate-200 hover:bg-white/5 border border-transparent'
                   }`}
                 >
                   <LogOut className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-blue-400" />
-                  <span>ثبت کوتاژ</span>
+                  <span>ثبت کوتاژ و ترخیص ۹۰/۱۰</span>
                 </motion.button>
 
                 <motion.button
                   whileTap={{ scale: 0.97 }}
                   onClick={() => setExitSubTab('lab')}
-                  className={`flex items-center gap-1.5 sm:gap-2 px-3.5 sm:px-4 py-1.5 sm:py-2 rounded-full text-xs sm:text-sm font-bold shrink-0 transition-all ${
+                  className={`min-h-[40px] flex items-center gap-1.5 sm:gap-2 px-3.5 sm:px-4 py-1.5 sm:py-2 rounded-full text-xs sm:text-sm font-bold shrink-0 transition-colors ${
                     exitSubTab === 'lab'
-                      ? 'bg-gradient-to-b from-purple-500/35 to-pink-500/20 text-purple-200 border border-purple-400/60 shadow-md shadow-purple-500/20 backdrop-blur-xl'
+                      ? 'bg-gradient-to-b from-purple-500/35 to-pink-500/20 text-purple-200 border border-purple-400/60'
                       : 'text-slate-400 hover:text-slate-200 hover:bg-white/5 border border-transparent'
                   }`}
                 >
@@ -2657,14 +2696,52 @@ export default function App() {
                   </h2>
                 </div>
 
+                {/* Exit-Exclusive 90% / 10% Clearance & Sata Quick-Launch Strip */}
+                {docs.length > 0 && (
+                  <div className="glass-panel p-3.5 sm:p-4 rounded-2xl border border-amber-400/25 space-y-2.5">
+                    <div className="flex items-center justify-between gap-2 flex-wrap">
+                      <div className="flex items-center gap-2 text-xs sm:text-sm font-bold text-amber-200">
+                        <ShieldCheck className="w-4 h-4 text-amber-400 shrink-0" />
+                        <span>مدیریت ترخیص ۹۰٪ / ۱۰٪، تایید ساتا و خروج فیزیکی (مختص مرحله خروج)</span>
+                      </div>
+                      <span className="text-[11px] text-slate-400 font-mono">
+                        {fa(docs.filter((d) => (d.pallets || 0) > 0).length)} محموله دارای پالت
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-2 overflow-x-auto no-scrollbar pb-1">
+                      {docs.slice(0, 12).map((entryItem) => {
+                        const bal = computePalletBalances(entryItem, physicalExits);
+                        const st = deriveClearanceStatus(entryItem, physicalExits);
+                        const meta = CLEARANCE_STATUS_META[st];
+                        return (
+                          <button
+                            key={entryItem.id}
+                            type="button"
+                            onClick={() => setClearanceDrawerDocId(entryItem.id)}
+                            className="shrink-0 min-h-[44px] flex items-center gap-2 px-3 py-2 rounded-xl bg-slate-900/80 hover:bg-slate-800/90 border border-white/12 hover:border-amber-400/50 text-xs transition-colors cursor-pointer"
+                          >
+                            <span className="font-bold text-slate-100 font-mono">کوتاژ {fa(entryItem.cottage)}</span>
+                            <span className="text-[11px] text-cyan-300 font-mono tabular-nums">
+                              ۹۰٪:{fa(bal.firstStagePallets)} / ۱۰٪:{fa(bal.remainingPallets)}
+                            </span>
+                            <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold border ${meta.badgeCls}`}>
+                              {meta.shortLabel}
+                            </span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+
                 {/* Mobile View Mode Switcher (< lg) */}
-                <div className="lg:hidden flex items-center gap-1.5 p-1 bg-white/5 border border-white/10 rounded-2xl backdrop-blur-md">
+                <div className="lg:hidden flex items-center gap-1.5 p-1 bg-white/5 border border-white/10 rounded-2xl">
                   <button
                     type="button"
                     onClick={() => setMobileExitMode('list')}
-                    className={`flex-1 py-2.5 px-3 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2 ${
+                    className={`min-h-[44px] flex-1 py-2.5 px-3 rounded-xl text-xs font-bold transition-colors flex items-center justify-center gap-2 ${
                       mobileExitMode === 'list'
-                        ? 'bg-gradient-to-r from-emerald-500/30 to-teal-500/20 text-emerald-200 border border-emerald-400/50 shadow-md'
+                        ? 'bg-gradient-to-r from-emerald-500/30 to-teal-500/20 text-emerald-200 border border-emerald-400/50'
                         : 'text-slate-400 hover:text-slate-200'
                     }`}
                   >
@@ -2674,9 +2751,9 @@ export default function App() {
                   <button
                     type="button"
                     onClick={() => setMobileExitMode('form')}
-                    className={`flex-1 py-2.5 px-3 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2 ${
+                    className={`min-h-[44px] flex-1 py-2.5 px-3 rounded-xl text-xs font-bold transition-colors flex items-center justify-center gap-2 ${
                       mobileExitMode === 'form'
-                        ? 'bg-gradient-to-r from-amber-500/30 to-amber-600/20 text-amber-200 border border-amber-400/50 shadow-md'
+                        ? 'bg-gradient-to-r from-amber-500/30 to-amber-600/20 text-amber-200 border border-amber-400/50'
                         : 'text-slate-400 hover:text-slate-200'
                     }`}
                   >
@@ -2759,7 +2836,7 @@ export default function App() {
                           <Calendar className="w-4 h-4 text-amber-400" />
                           <span>بازه زمانی</span>
                           {(exitStartDate || exitEndDate) && (
-                            <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse" />
+                            <span className="w-2 h-2 rounded-full bg-amber-400" />
                           )}
                         </button>
                       </div>
@@ -2776,9 +2853,9 @@ export default function App() {
                             <button
                               key={f.id}
                               onClick={() => setExitFilter(f.id as ExitFilterType)}
-                              className={`px-3 py-1.5 rounded-xl border transition-all ${
+                              className={`min-h-[36px] px-3 py-1.5 rounded-xl border transition-colors ${
                                 exitFilter === f.id
-                                  ? 'bg-blue-500/20 text-blue-300 font-bold border-blue-500/40 shadow-sm shadow-blue-500/20 backdrop-blur-md'
+                                  ? 'bg-blue-500/20 text-blue-300 font-bold border-blue-500/40'
                                   : 'border-white/10 text-slate-400 hover:text-white hover:bg-white/5'
                               }`}
                             >
