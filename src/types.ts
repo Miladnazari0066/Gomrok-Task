@@ -252,7 +252,7 @@ export interface DailyTask {
 
 export type TabType = 'entry' | 'consolidation' | 'exit' | 'lab' | 'reports';
 
-export type MainTabType = 'entry' | 'exit' | 'reports' | 'letters';
+export type MainTabType = 'entry' | 'exit' | 'reports' | 'letters' | 'tools';
 export type EntrySubTab = 'docs' | 'consolidation';
 export type ExitSubTab = 'docs' | 'lab';
 

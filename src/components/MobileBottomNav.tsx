@@ -1,81 +1,70 @@
 import React from 'react';
-import { PackageCheck, LogOut, BarChart3, FileSignature, SlidersHorizontal } from 'lucide-react';
+import {
+  PackageCheck,
+  LogOut,
+  BarChart3,
+  FileSignature,
+  SlidersHorizontal,
+} from 'lucide-react';
 import { fa } from '../utils/jalali';
-
-export type MainTabKey = 'entry' | 'exit' | 'reports' | 'letters';
+import { MainTabType } from '../types';
 
 interface MobileBottomNavProps {
-  activeTab: MainTabKey;
-  onSelectTab: (tab: MainTabKey) => void;
-  onOpenTools: () => void;
-  isToolsOpen?: boolean;
-  hasToolsAlert?: boolean;
+  activeTab: MainTabType;
+  onSelectTab: (tab: MainTabType) => void;
+  toolsAlertCount?: number;
+  hasSecurityWarning?: boolean;
   canViewEntry: boolean;
   canViewExit: boolean;
   canViewReports: boolean;
   canViewLetters: boolean;
-  entryCount: number;
-  exitCount: number;
 }
 
 export const MobileBottomNav: React.FC<MobileBottomNavProps> = ({
   activeTab,
   onSelectTab,
-  onOpenTools,
-  isToolsOpen = false,
-  hasToolsAlert = false,
+  toolsAlertCount = 0,
+  hasSecurityWarning = false,
   canViewEntry,
   canViewExit,
   canViewReports,
   canViewLetters,
-  entryCount,
-  exitCount,
 }) => {
   const items: Array<{
-    id: MainTabKey | 'tools';
+    id: MainTabType;
     label: string;
     icon: React.ComponentType<{ className?: string }>;
-    badge?: number;
-    alertDot?: boolean;
     activeText: string;
-    activeBar: string;
-    activeIconBg: string;
-    onClick: () => void;
+    activeIndicator: string;
+    badgeCount?: number;
+    warningDot?: boolean;
   }> = [];
 
   if (canViewEntry) {
     items.push({
       id: 'entry',
-      label: 'ورود کالا',
+      label: 'ورود',
       icon: PackageCheck,
-      badge: entryCount,
       activeText: 'text-cyan-300',
-      activeBar: 'bg-cyan-400',
-      activeIconBg: 'bg-cyan-500/20 border-cyan-400/45',
-      onClick: () => onSelectTab('entry'),
+      activeIndicator: 'bg-cyan-400',
     });
   }
   if (canViewExit) {
     items.push({
       id: 'exit',
-      label: 'خروج کالا',
+      label: 'خروج',
       icon: LogOut,
-      badge: exitCount,
       activeText: 'text-blue-300',
-      activeBar: 'bg-blue-400',
-      activeIconBg: 'bg-blue-500/20 border-blue-400/45',
-      onClick: () => onSelectTab('exit'),
+      activeIndicator: 'bg-blue-400',
     });
   }
   if (canViewReports) {
     items.push({
       id: 'reports',
-      label: 'گزارش‌گیری',
+      label: 'گزارش',
       icon: BarChart3,
       activeText: 'text-emerald-300',
-      activeBar: 'bg-emerald-400',
-      activeIconBg: 'bg-emerald-500/20 border-emerald-400/45',
-      onClick: () => onSelectTab('reports'),
+      activeIndicator: 'bg-emerald-400',
     });
   }
   if (canViewLetters) {
@@ -84,22 +73,18 @@ export const MobileBottomNav: React.FC<MobileBottomNavProps> = ({
       label: 'نامه‌ها',
       icon: FileSignature,
       activeText: 'text-amber-300',
-      activeBar: 'bg-amber-400',
-      activeIconBg: 'bg-amber-500/20 border-amber-400/45',
-      onClick: () => onSelectTab('letters'),
+      activeIndicator: 'bg-amber-400',
     });
   }
 
-  // Dedicated thumb-zone Tools & Settings tab
   items.push({
     id: 'tools',
     label: 'ابزارها',
     icon: SlidersHorizontal,
-    alertDot: hasToolsAlert,
     activeText: 'text-cyan-200',
-    activeBar: 'bg-cyan-300',
-    activeIconBg: 'bg-white/15 border-white/30',
-    onClick: onOpenTools,
+    activeIndicator: 'bg-cyan-300',
+    badgeCount: toolsAlertCount > 0 ? toolsAlertCount : undefined,
+    warningDot: toolsAlertCount === 0 && hasSecurityWarning,
   });
 
   if (items.length === 0) return null;
@@ -107,55 +92,52 @@ export const MobileBottomNav: React.FC<MobileBottomNavProps> = ({
   return (
     <nav
       aria-label="ناوبری اصلی موبایل"
-      className="md:hidden fixed bottom-0 inset-x-0 z-40 bg-[#050a16] border-t border-white/15 pb-safe-bar shadow-[0_-10px_30px_rgba(0,0,0,0.9)] font-vazir dir-rtl select-none print:hidden"
+      className="md:hidden fixed bottom-0 inset-x-0 z-40 bg-[#070d1a] border-t border-white/10 pb-safe-bar shadow-[0_-8px_24px_rgba(0,0,0,0.75)] font-vazir dir-rtl select-none print:hidden"
     >
       <div
-        className="grid items-stretch"
+        className="grid items-stretch max-w-lg mx-auto"
         style={{ gridTemplateColumns: `repeat(${items.length}, minmax(0, 1fr))` }}
       >
         {items.map((item) => {
           const Icon = item.icon;
-          const isActive = item.id === 'tools' ? isToolsOpen : !isToolsOpen && activeTab === item.id;
+          const isActive = activeTab === item.id;
           return (
             <button
               key={item.id}
               type="button"
-              onClick={item.onClick}
-              className={`relative min-h-[56px] py-1.5 px-1 flex flex-col items-center justify-center gap-0.5 transition-colors active:scale-95 cursor-pointer ${
+              onClick={() => onSelectTab(item.id)}
+              aria-current={isActive ? 'page' : undefined}
+              className={`relative min-h-[56px] pt-2 pb-1.5 px-1 flex flex-col items-center justify-center gap-1 transition-colors duration-150 active:scale-95 cursor-pointer ${
                 isActive ? item.activeText : 'text-slate-400 hover:text-slate-200'
               }`}
             >
-              {isActive && (
-                <span
-                  className={`absolute top-0 inset-x-3 h-[2.5px] rounded-b-full ${item.activeBar}`}
-                />
-              )}
-
-              <div
-                className={`relative w-8 h-7 rounded-xl flex items-center justify-center border transition-colors ${
-                  isActive
-                    ? item.activeIconBg
-                    : 'bg-transparent border-transparent'
+              {/* Crisp Top Active Accent Line */}
+              <span
+                aria-hidden="true"
+                className={`absolute top-0 w-7 h-[2px] rounded-full transition-opacity duration-150 ${
+                  isActive ? `${item.activeIndicator} opacity-100` : 'opacity-0'
                 }`}
-              >
-                <Icon className="w-[18px] h-[18px]" />
-                {typeof item.badge === 'number' && item.badge > 0 && (
-                  <span
-                    className={`absolute -top-1.5 -left-2 min-w-[16px] h-[16px] px-1 rounded-full text-[9px] font-mono tabular-nums font-black flex items-center justify-center border ${
-                      isActive
-                        ? 'bg-slate-950 text-white border-white/30'
-                        : 'bg-slate-800 text-slate-300 border-white/15'
-                    }`}
-                  >
-                    {fa(item.badge)}
+              />
+
+              {/* Clean Unboxed Icon with Single Alert Indicator on Tools */}
+              <span className="relative flex items-center justify-center w-6 h-6">
+                <Icon className="w-[20px] h-[20px]" />
+                {typeof item.badgeCount === 'number' && item.badgeCount > 0 && (
+                  <span className="absolute -top-1.5 -left-2.5 min-w-[17px] h-[17px] px-1 rounded-full bg-rose-500 text-white text-[10px] font-mono tabular-nums font-bold flex items-center justify-center ring-2 ring-[#070d1a]">
+                    {item.badgeCount > 99 ? '+۹۹' : fa(item.badgeCount)}
                   </span>
                 )}
-                {item.alertDot && (
-                  <span className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-amber-400 ring-2 ring-[#050a16]" />
+                {item.warningDot && (
+                  <span className="absolute -top-0.5 -left-0.5 w-2 h-2 rounded-full bg-amber-400 ring-2 ring-[#070d1a]" />
                 )}
-              </div>
+              </span>
 
-              <span className="text-[10px] font-bold leading-tight truncate max-w-full">
+              {/* Single-Word Crisp Label */}
+              <span
+                className={`text-[11px] leading-none whitespace-nowrap ${
+                  isActive ? 'font-bold' : 'font-medium'
+                }`}
+              >
                 {item.label}
               </span>
             </button>

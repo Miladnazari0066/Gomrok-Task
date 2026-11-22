@@ -78,7 +78,7 @@
 }
 
 .pt-safe-header {
-  padding-top: calc(env(safe-area-inset-top, 0px) + 0.75rem);
+  padding-top: max(0.5rem, env(safe-area-inset-top, 0px));
 }
 
 @media (min-width: 768px) {
@@ -92,7 +92,7 @@
 }
 
 .pb-safe-bar {
-  padding-bottom: env(safe-area-inset-bottom, 0px);
+  padding-bottom: max(0.5rem, env(safe-area-inset-bottom, 0px));
 }
 
 .pb-safe-sheet {

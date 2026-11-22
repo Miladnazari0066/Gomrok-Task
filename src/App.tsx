@@ -24,6 +24,7 @@ import { DailyTasksDrawer } from './components/DailyTasksDrawer';
 import { PWAInstallGate } from './components/PWAInstallGate';
 import { OfflineIndicator } from './components/OfflineIndicator';
 import { MobileBottomNav } from './components/MobileBottomNav';
+import { MobileToolsView } from './components/MobileToolsView';
 import { useDeviceEnvironment } from './hooks/useDeviceEnvironment';
 import {
   initializeSecurity,
@@ -174,7 +175,6 @@ export default function App() {
   // Mobile Device Form vs List View Switcher States ('list' | 'form')
   const [mobileEntryMode, setMobileEntryMode] = useState<'list' | 'form'>('list');
   const [mobileExitMode, setMobileExitMode] = useState<'list' | 'form'>('list');
-  const [isMobileToolsOpen, setIsMobileToolsOpen] = useState<boolean>(false);
 
   // Cloud Auto Sync State
   const [lastCloudSyncTime, setLastCloudSyncTime] = useState<Date | null>(null);
@@ -509,6 +509,23 @@ export default function App() {
       else if (activePermissions.canViewExit) setMainTab('exit');
     }
   }, [currentUser, activePermissions, mainTab]);
+
+  // If viewport widens to desktop/tablet while mobile-only 'tools' tab is active, fall back cleanly
+  useEffect(() => {
+    if (typeof window === 'undefined' || mainTab !== 'tools') return;
+    const mq = window.matchMedia('(min-width: 768px)');
+    const fallbackIfDesktop = () => {
+      if (mq.matches) {
+        if (activePermissions.canViewEntry) setMainTab('entry');
+        else if (activePermissions.canViewExit) setMainTab('exit');
+        else if (activePermissions.canViewReports) setMainTab('reports');
+        else setMainTab('letters');
+      }
+    };
+    fallbackIfDesktop();
+    mq.addEventListener('change', fallbackIfDesktop);
+    return () => mq.removeEventListener('change', fallbackIfDesktop);
+  }, [mainTab, activePermissions]);
 
   const handleSavePermissions = (updatedMap: UserPermissionsMap) => {
     setPermissionsMap(updatedMap);
@@ -2097,10 +2114,10 @@ export default function App() {
   }
 
   return (
-    <div className="min-h-[100dvh] bg-transparent text-[#f1f5f9] pb-[calc(5.25rem+env(safe-area-inset-bottom))] md:pb-24 relative overflow-x-clip selection:bg-cyan-500/30">
+    <div className="min-h-[100dvh] bg-transparent text-[#f1f5f9] pb-[calc(5.75rem+env(safe-area-inset-bottom,0px))] md:pb-24 relative overflow-x-clip selection:bg-cyan-500/30">
       <OfflineIndicator />
 
-      {/* Top Bar (direct sticky child with extra mobile top clearance and z-30 stacking) */}
+      {/* Top Bar (Desktop full toolbar; Mobile slim title-only header) */}
       <Navbar
         onLogout={handleLogout}
         onOpenCloudDb={activePermissions.canAccessCloudDb ? () => setIsCloudDbModalOpen(true) : undefined}
@@ -2119,8 +2136,6 @@ export default function App() {
         isCloudSyncing={isCloudSyncing}
         currentUser={currentUser}
         userRole={userRole}
-        mobileToolsOpen={isMobileToolsOpen}
-        onSetMobileToolsOpen={setIsMobileToolsOpen}
       />
 
       {/* Tabs Navigation - Desktop & Tablet Floating Glass Capsule Dock (mobile uses MobileBottomNav) */}
@@ -3073,6 +3088,33 @@ export default function App() {
               />
             </motion.div>
           )}
+          {mainTab === 'tools' && (
+            <motion.div
+              key="main-tab-tools"
+              initial={{ opacity: 0, y: 12 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -8 }}
+              transition={{ duration: 0.22, ease: 'easeOut' }}
+            >
+              <MobileToolsView
+                onLogout={handleLogout}
+                onOpenCloudDb={activePermissions.canAccessCloudDb ? () => setIsCloudDbModalOpen(true) : undefined}
+                onOpenSummaryModal={activePermissions.canViewSummaryModal ? () => setIsSummaryModalOpen(true) : undefined}
+                onOpenSecurityCenter={() => setIsSecurityModalOpen(true)}
+                onOpenNotifications={() => setIsNotificationDrawerOpen(true)}
+                onOpenDailyTasks={() => setIsDailyTasksDrawerOpen(true)}
+                unreadNotificationsCount={unreadNotificationsCount}
+                pendingTasksCount={pendingTasksCount}
+                overdueTasksCount={overdueTasksCount}
+                activeOperator={activeOperator}
+                onSwitchOperator={userRole === 'admin' ? handleSwitchOperator : undefined}
+                isDefaultPasswordActive={isUsingDefaultPasswords()}
+                lastCloudSyncTime={lastCloudSyncTime}
+                isCloudSyncing={isCloudSyncing}
+                userRole={userRole}
+              />
+            </motion.div>
+          )}
         </AnimatePresence>
       </main>
 
@@ -3080,19 +3122,15 @@ export default function App() {
       <MobileBottomNav
         activeTab={mainTab}
         onSelectTab={(tab) => {
-          setIsMobileToolsOpen(false);
           setMainTab(tab);
           window.scrollTo({ top: 0, behavior: 'smooth' });
         }}
-        onOpenTools={() => setIsMobileToolsOpen((prev) => !prev)}
-        isToolsOpen={isMobileToolsOpen}
-        hasToolsAlert={unreadNotificationsCount > 0 || overdueTasksCount > 0 || isUsingDefaultPasswords()}
+        toolsAlertCount={unreadNotificationsCount + overdueTasksCount}
+        hasSecurityWarning={isUsingDefaultPasswords()}
         canViewEntry={activePermissions.canViewEntry}
         canViewExit={activePermissions.canViewExit}
         canViewReports={activePermissions.canViewReports}
         canViewLetters={activePermissions.canViewLetters !== false}
-        entryCount={docs.length}
-        exitCount={exits.length}
       />
 
       {/* Toast Container */}

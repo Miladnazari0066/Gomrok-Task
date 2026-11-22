@@ -1,5 +1,4 @@
 import React, { useState, useEffect } from 'react';
-import { createPortal } from 'react-dom';
 import {
   LogOut,
   ShieldCheck,
@@ -11,7 +10,6 @@ import {
   Bell,
   ClipboardList,
   UserCheck,
-  X,
 } from 'lucide-react';
 import { toJalali, WDN, JMONTHS, fa, pad2 } from '../utils/jalali';
 import { isSupabaseConfigured } from '../lib/supabase';
@@ -37,8 +35,6 @@ interface NavbarProps {
   isCloudSyncing?: boolean;
   currentUser?: string;
   userRole?: UserRole;
-  mobileToolsOpen?: boolean;
-  onSetMobileToolsOpen?: (open: boolean) => void;
 }
 
 export const Navbar: React.FC<NavbarProps> = ({
@@ -56,22 +52,10 @@ export const Navbar: React.FC<NavbarProps> = ({
   isDefaultPasswordActive = false,
   isCloudSyncing = false,
   userRole,
-  mobileToolsOpen,
-  onSetMobileToolsOpen,
 }) => {
   const [timeStr, setTimeStr] = useState('');
   const [dateStr, setDateStr] = useState('');
-  const [internalMenuOpen, setInternalMenuOpen] = useState(false);
-
-  const isToolsSheetOpen =
-    typeof mobileToolsOpen === 'boolean' ? mobileToolsOpen : internalMenuOpen;
-  const setToolsSheetOpen = (open: boolean) => {
-    if (onSetMobileToolsOpen) {
-      onSetMobileToolsOpen(open);
-    } else {
-      setInternalMenuOpen(open);
-    }
-  };
+  const [shortDateStr, setShortDateStr] = useState('');
 
   const isCloud = isSupabaseConfigured();
   const activeRole: UserRole = userRole || (sessionStorage.getItem('gm_role') as UserRole) || 'admin';
@@ -81,6 +65,7 @@ export const Navbar: React.FC<NavbarProps> = ({
       const now = new Date();
       const j = toJalali(now.getFullYear(), now.getMonth() + 1, now.getDate());
       setDateStr(`${WDN[now.getDay()]} ${fa(j.jd)} ${JMONTHS[j.jm - 1]} ${fa(j.jy)}`);
+      setShortDateStr(`${fa(j.jd)} ${JMONTHS[j.jm - 1]} ${fa(j.jy)}`);
       setTimeStr(fa(`${pad2(now.getHours())}:${pad2(now.getMinutes())}:${pad2(now.getSeconds())}`));
     };
     tick();
@@ -89,9 +74,9 @@ export const Navbar: React.FC<NavbarProps> = ({
   }, []);
 
   return (
-    <header className="sticky top-0 z-30 pt-safe-header pb-1.5 md:pb-0 bg-[#050a16]/95 border-b border-white/12 shadow-[0_12px_30px_-10px_rgba(0,0,0,0.8)] font-vazir dir-rtl select-none print:hidden">
+    <header className="sticky top-0 z-30 pt-safe-header bg-[#060b17]/95 border-b border-white/10 shadow-[0_8px_24px_-10px_rgba(0,0,0,0.75)] font-vazir dir-rtl select-none print:hidden">
       {/* Main Desktop & Mobile Header Row */}
-      <div className="max-w-[1460px] mx-auto px-3 sm:px-6 h-[50px] md:h-auto md:py-3 flex items-center justify-between gap-2 sm:gap-4">
+      <div className="max-w-[1460px] mx-auto px-3.5 sm:px-6 h-[46px] md:h-auto md:py-3 flex items-center justify-between gap-2 sm:gap-4">
         {/* Brand Logo & Title */}
         <div className="flex items-center gap-2 sm:gap-3 min-w-0 flex-1 md:flex-initial">
           <div className="w-8 h-8 sm:w-11 sm:h-11 rounded-xl sm:rounded-2xl overflow-hidden border border-cyan-400/45 bg-[#071A21] shadow-md shrink-0 flex items-center justify-center">
@@ -268,223 +253,14 @@ export const Navbar: React.FC<NavbarProps> = ({
           </button>
         </div>
 
-        {/* Mobile Compact Top Header Controls (< md: Bell & Tasks with clear spacing; Tools menu lives in bottom bar) */}
-        <div className="flex md:hidden items-center gap-2 shrink-0">
-          {onOpenNotifications && (
-            <button
-              type="button"
-              onClick={onOpenNotifications}
-              className="relative min-w-[44px] min-h-[44px] flex items-center justify-center rounded-xl bg-amber-500/15 border border-amber-500/35 text-amber-300 cursor-pointer active:scale-95"
-              aria-label="اعلان‌ها"
-            >
-              <Bell className="w-[18px] h-[18px]" />
-              {unreadNotificationsCount > 0 && (
-                <span className="absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1 rounded-full bg-rose-500 text-white text-[10px] font-mono tabular-nums font-black flex items-center justify-center">
-                  {fa(unreadNotificationsCount)}
-                </span>
-              )}
-            </button>
-          )}
-
-          {onOpenDailyTasks && (
-            <button
-              type="button"
-              onClick={onOpenDailyTasks}
-              className="relative min-w-[44px] min-h-[44px] flex items-center justify-center rounded-xl bg-indigo-500/15 border border-indigo-500/35 text-indigo-300 cursor-pointer active:scale-95"
-              aria-label="کارهای روزانه"
-            >
-              <ClipboardList className="w-[18px] h-[18px]" />
-              {pendingTasksCount > 0 && (
-                <span
-                  className={`absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1 rounded-full text-[10px] font-mono tabular-nums font-black flex items-center justify-center ${
-                    overdueTasksCount > 0 ? 'bg-rose-500 text-white' : 'bg-indigo-400 text-slate-950'
-                  }`}
-                >
-                  {fa(pendingTasksCount)}
-                </span>
-              )}
-            </button>
-          )}
-        </div>
+        {/* Mobile Title-Only Info Slot (< md: Zero unreachable buttons; all actions live in the full-screen Tools tab) */}
+        <span className="md:hidden text-[11px] font-medium text-slate-400 tabular-nums whitespace-nowrap shrink-0">
+          {shortDateStr}
+        </span>
       </div>
 
       {/* Subtle Bottom Hairline */}
-      <div className="h-px bg-gradient-to-r from-transparent via-cyan-500/45 to-transparent" />
-
-      {/* Mobile Tools Bottom Sheet — Portaled to document.body at z-[80] so it ALWAYS paints cleanly above MobileBottomNav */}
-      {isToolsSheetOpen &&
-        typeof document !== 'undefined' &&
-        createPortal(
-          <div
-            className="md:hidden fixed inset-0 z-[80] flex items-end bg-black/75 backdrop-blur-sm animate-in fade-in font-vazir dir-rtl select-none"
-            onClick={() => setToolsSheetOpen(false)}
-          >
-            <div
-              className="w-full bg-[#070d1b] border-t border-white/20 rounded-t-3xl px-4 pt-3 pb-safe-sheet shadow-[0_-24px_60px_rgba(0,0,0,0.95)] space-y-3.5 max-h-[88dvh] overflow-y-auto"
-              onClick={(e) => e.stopPropagation()}
-            >
-              {/* Grab Handle */}
-              <div className="w-10 h-1.5 rounded-full bg-white/25 mx-auto" />
-
-              {/* Sheet Header + Clock */}
-              <div className="flex items-center justify-between gap-2 pb-2.5 border-b border-white/10">
-                <div>
-                  <h2 className="font-lalezar text-lg text-slate-100 leading-tight">ابزارها و تنظیمات</h2>
-                  <p className="text-[11px] text-slate-400 font-mono tabular-nums mt-0.5">
-                    {dateStr} · <span className="text-cyan-300 font-bold">{timeStr}</span>
-                  </p>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setToolsSheetOpen(false)}
-                  className="min-w-[44px] min-h-[44px] flex items-center justify-center rounded-xl bg-white/8 border border-white/15 text-slate-200 cursor-pointer active:scale-95"
-                  aria-label="بستن منو"
-                >
-                  <X className="w-5 h-5" />
-                </button>
-              </div>
-
-              {/* Active Operator Selector */}
-              <div className="flex items-center justify-between gap-2 p-3 rounded-2xl bg-white/[0.04] border border-white/10 text-xs">
-                <span className="text-slate-300 font-medium">کاربر فعال سامانه:</span>
-                {activeRole === 'admin' && onSwitchOperator ? (
-                  <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border bg-cyan-500/15 border-cyan-400/40 text-cyan-200 min-h-[44px]">
-                    <UserCheck className="w-4 h-4 text-cyan-400 shrink-0" />
-                    <select
-                      value={activeOperator}
-                      onChange={(e) => onSwitchOperator(e.target.value as 'نظری' | 'یوسفی' | 'افسر')}
-                      className="bg-transparent text-cyan-200 font-bold outline-none text-xs"
-                    >
-                      <option value="نظری" className="bg-[#0c0e14]">نظری (مدیر ارشد)</option>
-                      <option value="یوسفی" className="bg-[#0c0e14]">یوسفی</option>
-                      <option value="افسر" className="bg-[#0c0e14]">افسر</option>
-                    </select>
-                  </div>
-                ) : (
-                  <span className="px-3 py-1.5 rounded-xl bg-amber-500/15 border border-amber-400/40 text-amber-200 font-bold">
-                    {activeRole === 'admin' ? 'مدیر' : 'ناظر'}
-                  </span>
-                )}
-              </div>
-
-              {/* Thumb-Zone Quick Shortcuts for Notifications & Daily Tasks */}
-              {(onOpenNotifications || onOpenDailyTasks) && (
-                <div className="grid grid-cols-2 gap-2.5">
-                  {onOpenNotifications && (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setToolsSheetOpen(false);
-                        onOpenNotifications();
-                      }}
-                      className="min-h-[50px] flex items-center justify-center gap-2 text-xs text-amber-200 bg-amber-500/15 border border-amber-500/35 px-3 py-2.5 rounded-2xl font-bold cursor-pointer active:scale-95"
-                    >
-                      <Bell className="w-4 h-4 text-amber-400 shrink-0" />
-                      <span>اعلان‌ها</span>
-                      {unreadNotificationsCount > 0 && (
-                        <span className="px-1.5 py-0.5 rounded-full bg-rose-500 text-white text-[10px] font-mono font-black">
-                          {fa(unreadNotificationsCount)}
-                        </span>
-                      )}
-                    </button>
-                  )}
-
-                  {onOpenDailyTasks && (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setToolsSheetOpen(false);
-                        onOpenDailyTasks();
-                      }}
-                      className="min-h-[50px] flex items-center justify-center gap-2 text-xs text-indigo-200 bg-indigo-500/15 border border-indigo-500/35 px-3 py-2.5 rounded-2xl font-bold cursor-pointer active:scale-95"
-                    >
-                      <ClipboardList className="w-4 h-4 text-indigo-300 shrink-0" />
-                      <span>کارهای روزانه</span>
-                      {pendingTasksCount > 0 && (
-                        <span
-                          className={`px-1.5 py-0.5 rounded-full text-[10px] font-mono font-black ${
-                            overdueTasksCount > 0 ? 'bg-rose-500 text-white' : 'bg-indigo-400 text-slate-950'
-                          }`}
-                        >
-                          {fa(pendingTasksCount)}
-                        </span>
-                      )}
-                    </button>
-                  )}
-                </div>
-              )}
-
-              {/* System Tools Grid */}
-              <div className="grid grid-cols-2 gap-2.5">
-                {onOpenSecurityCenter && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setToolsSheetOpen(false);
-                      onOpenSecurityCenter();
-                    }}
-                    className="relative min-h-[52px] flex items-center justify-center gap-2 text-xs text-emerald-200 bg-emerald-500/15 border border-emerald-500/35 px-3 py-2.5 rounded-2xl font-bold cursor-pointer active:scale-95"
-                  >
-                    <ShieldCheck className="w-4 h-4 text-emerald-400 shrink-0" />
-                    <span>مرکز امنیت</span>
-                    {isDefaultPasswordActive && (
-                      <span className="w-2.5 h-2.5 rounded-full bg-amber-400 absolute top-2 right-2" />
-                    )}
-                  </button>
-                )}
-
-                {onOpenSummaryModal && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setToolsSheetOpen(false);
-                      onOpenSummaryModal();
-                    }}
-                    className="min-h-[52px] flex items-center justify-center gap-2 text-xs text-cyan-200 bg-cyan-500/15 border border-cyan-500/35 px-3 py-2.5 rounded-2xl font-bold cursor-pointer active:scale-95"
-                  >
-                    <PieChart className="w-4 h-4 text-cyan-400 shrink-0" />
-                    <span>آمار کالاها</span>
-                  </button>
-                )}
-
-                {onOpenCloudDb && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setToolsSheetOpen(false);
-                      onOpenCloudDb();
-                    }}
-                    className={`min-h-[52px] flex items-center justify-center gap-2 text-xs font-bold px-3 py-2.5 rounded-2xl border cursor-pointer active:scale-95 ${
-                      !isCloud
-                        ? 'bg-rose-500/15 border-rose-500/35 text-rose-300'
-                        : 'bg-emerald-500/15 border-emerald-500/35 text-emerald-200'
-                    }`}
-                  >
-                    {!isCloud ? <CloudOff className="w-4 h-4 text-rose-400 shrink-0" /> : <CloudCheck className="w-4 h-4 text-emerald-400 shrink-0" />}
-                    <span>{isCloud ? 'دیتابیس ابری' : 'اتصال ابری'}</span>
-                  </button>
-                )}
-
-                <button
-                  type="button"
-                  onClick={() => {
-                    setToolsSheetOpen(false);
-                    onLogout();
-                  }}
-                  className="min-h-[52px] flex items-center justify-center gap-2 text-xs text-rose-200 bg-rose-500/20 border border-rose-500/45 px-3 py-2.5 rounded-2xl font-bold cursor-pointer active:scale-95"
-                >
-                  <LogOut className="w-4 h-4 text-rose-400 shrink-0" />
-                  <span>خروج از سامانه</span>
-                </button>
-              </div>
-
-              <div className="flex justify-center pt-1">
-                <PWAInstallButton compact />
-              </div>
-            </div>
-          </div>,
-          document.body
-        )}
+      <div className="h-px bg-gradient-to-r from-transparent via-cyan-500/35 to-transparent" />
     </header>
   );
 };

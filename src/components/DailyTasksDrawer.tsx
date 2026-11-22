@@ -236,7 +236,7 @@ export const DailyTasksDrawer: React.FC<DailyTasksDrawerProps> = ({
     >
       <div
         onClick={(e) => e.stopPropagation()}
-        className="w-full max-w-2xl h-[100dvh] pt-safe-top pb-safe-bar ios-glass-modal border-r border-white/20 flex flex-col shadow-[0_0_80px_rgba(0,0,0,0.9)] text-slate-100"
+        className="w-full max-w-2xl h-[100dvh] pt-safe-header ios-glass-modal border-r border-white/20 flex flex-col shadow-[0_0_80px_rgba(0,0,0,0.9)] text-slate-100"
       >
         {/* Header */}
         <div className="px-4 sm:px-5 py-3.5 sm:py-4 border-b border-white/10 bg-white/[0.03] flex items-center justify-between gap-2.5 shrink-0">
@@ -625,6 +625,17 @@ export const DailyTasksDrawer: React.FC<DailyTasksDrawerProps> = ({
               );
             })
           )}
+        </div>
+
+        {/* Thumb-Zone Mobile Back Bar */}
+        <div className="md:hidden shrink-0 border-t border-white/10 bg-[#070d1a] px-4 pt-2.5 pb-safe-bar">
+          <button
+            type="button"
+            onClick={onClose}
+            className="w-full min-h-[46px] rounded-xl bg-white/10 border border-white/15 text-slate-100 text-sm font-bold flex items-center justify-center gap-2 active:scale-[0.98] cursor-pointer"
+          >
+            <span>بازگشت</span>
+          </button>
         </div>
       </div>
     </div>
