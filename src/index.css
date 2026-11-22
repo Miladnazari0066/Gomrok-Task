@@ -77,12 +77,26 @@
   padding-top: env(safe-area-inset-top, 0px);
 }
 
+.pt-safe-header {
+  padding-top: calc(env(safe-area-inset-top, 0px) + 0.75rem);
+}
+
+@media (min-width: 768px) {
+  .pt-safe-header {
+    padding-top: env(safe-area-inset-top, 0px);
+  }
+}
+
 .pb-safe {
   padding-bottom: max(1rem, env(safe-area-inset-bottom));
 }
 
 .pb-safe-bar {
   padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+.pb-safe-sheet {
+  padding-bottom: max(1.5rem, calc(env(safe-area-inset-bottom, 0px) + 1rem));
 }
 
 .safe-modal-backdrop {

@@ -174,6 +174,7 @@ export default function App() {
   // Mobile Device Form vs List View Switcher States ('list' | 'form')
   const [mobileEntryMode, setMobileEntryMode] = useState<'list' | 'form'>('list');
   const [mobileExitMode, setMobileExitMode] = useState<'list' | 'form'>('list');
+  const [isMobileToolsOpen, setIsMobileToolsOpen] = useState<boolean>(false);
 
   // Cloud Auto Sync State
   const [lastCloudSyncTime, setLastCloudSyncTime] = useState<Date | null>(null);
@@ -2099,7 +2100,7 @@ export default function App() {
     <div className="min-h-[100dvh] bg-transparent text-[#f1f5f9] pb-[calc(5.25rem+env(safe-area-inset-bottom))] md:pb-24 relative overflow-x-clip selection:bg-cyan-500/30">
       <OfflineIndicator />
 
-      {/* Top Bar (direct sticky child with safe-area top inset and proper z-40 stacking) */}
+      {/* Top Bar (direct sticky child with extra mobile top clearance and z-30 stacking) */}
       <Navbar
         onLogout={handleLogout}
         onOpenCloudDb={activePermissions.canAccessCloudDb ? () => setIsCloudDbModalOpen(true) : undefined}
@@ -2118,6 +2119,8 @@ export default function App() {
         isCloudSyncing={isCloudSyncing}
         currentUser={currentUser}
         userRole={userRole}
+        mobileToolsOpen={isMobileToolsOpen}
+        onSetMobileToolsOpen={setIsMobileToolsOpen}
       />
 
       {/* Tabs Navigation - Desktop & Tablet Floating Glass Capsule Dock (mobile uses MobileBottomNav) */}
@@ -2271,8 +2274,8 @@ export default function App() {
         </div>
       </nav>
 
-      {/* Main Content Area */}
-      <main className="relative z-10 max-w-[1460px] mx-auto px-3 sm:px-6 pt-3 sm:pt-5 md:pt-6">
+      {/* Main Content Area (no z-index stacking trap so child modals/lightboxes paint above bars) */}
+      <main className="relative max-w-[1460px] mx-auto px-3 sm:px-6 pt-3 sm:pt-5 md:pt-6">
         <AnimatePresence mode="wait">
           {/* SECTION 1: GOODS ENTRY (ورود کالا) */}
           {mainTab === 'entry' && (
@@ -3077,9 +3080,13 @@ export default function App() {
       <MobileBottomNav
         activeTab={mainTab}
         onSelectTab={(tab) => {
+          setIsMobileToolsOpen(false);
           setMainTab(tab);
           window.scrollTo({ top: 0, behavior: 'smooth' });
         }}
+        onOpenTools={() => setIsMobileToolsOpen((prev) => !prev)}
+        isToolsOpen={isMobileToolsOpen}
+        hasToolsAlert={unreadNotificationsCount > 0 || overdueTasksCount > 0 || isUsingDefaultPasswords()}
         canViewEntry={activePermissions.canViewEntry}
         canViewExit={activePermissions.canViewExit}
         canViewReports={activePermissions.canViewReports}
