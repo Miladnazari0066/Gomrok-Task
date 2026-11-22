@@ -60,16 +60,22 @@ export const NotificationCenterDrawer: React.FC<NotificationCenterDrawerProps> =
   });
 
   return (
-    <div className="fixed inset-0 z-50 flex justify-end bg-black/70 backdrop-blur-md animate-in fade-in font-vazir dir-rtl">
-      <div className="w-full max-w-lg h-full ios-glass-modal border-r border-white/20 flex flex-col shadow-[0_0_80px_rgba(0,0,0,0.9)] text-slate-100">
+    <div
+      className="fixed inset-0 z-50 flex justify-end bg-black/70 backdrop-blur-md animate-in fade-in font-vazir dir-rtl"
+      onClick={onClose}
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        className="w-full max-w-lg h-[100dvh] pt-safe-top pb-safe-bar ios-glass-modal border-r border-white/20 flex flex-col shadow-[0_0_80px_rgba(0,0,0,0.9)] text-slate-100"
+      >
         {/* Header */}
-        <div className="px-5 py-4 border-b border-white/10 bg-white/[0.03] flex items-center justify-between gap-3 shrink-0">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-amber-500/25 to-cyan-500/20 border border-amber-400/40 flex items-center justify-center text-amber-300">
+        <div className="px-4 sm:px-5 py-3.5 sm:py-4 border-b border-white/10 bg-white/[0.03] flex items-center justify-between gap-3 shrink-0">
+          <div className="flex items-center gap-2.5 sm:gap-3 min-w-0">
+            <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-2xl bg-gradient-to-tr from-amber-500/25 to-cyan-500/20 border border-amber-400/40 flex items-center justify-center text-amber-300 shrink-0">
               <Bell className="w-5 h-5" />
             </div>
-            <div>
-              <h3 className="font-lalezar text-xl text-slate-100 flex items-center gap-2">
+            <div className="min-w-0">
+              <h3 className="font-lalezar text-lg sm:text-xl text-slate-100 flex items-center gap-2 flex-wrap">
                 <span>مرکز اعلان‌های هوشمند</span>
                 {unreadCount > 0 && (
                   <span className="text-xs font-mono tabular-nums px-2 py-0.5 rounded-full bg-rose-500/25 border border-rose-400/50 text-rose-200">
@@ -77,7 +83,7 @@ export const NotificationCenterDrawer: React.FC<NotificationCenterDrawerProps> =
                   </span>
                 )}
               </h3>
-              <p className="text-[11px] text-slate-400">
+              <p className="text-[11px] text-slate-400 truncate">
                 پایش لحظه‌ای ساتا، خروج فیزیکی، انقضای آزمایشگاه و سررسید کارها
               </p>
             </div>
@@ -86,7 +92,8 @@ export const NotificationCenterDrawer: React.FC<NotificationCenterDrawerProps> =
           <button
             type="button"
             onClick={onClose}
-            className="p-2 rounded-xl text-slate-400 hover:text-white hover:bg-white/10 border border-white/10 cursor-pointer"
+            className="min-w-[44px] min-h-[44px] flex items-center justify-center rounded-xl text-slate-300 hover:text-white hover:bg-white/10 border border-white/15 shrink-0 cursor-pointer"
+            aria-label="بستن اعلان‌ها"
           >
             <X className="w-5 h-5" />
           </button>

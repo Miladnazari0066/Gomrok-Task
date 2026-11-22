@@ -167,27 +167,35 @@ export const CommoditySummaryModal: React.FC<CommoditySummaryModalProps> = ({
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-2xl animate-in fade-in">
-      <div className="ios-glass-modal rounded-3xl p-5 sm:p-7 max-w-4xl w-full max-h-[90vh] flex flex-col space-y-5 text-slate-100 shadow-[0_30px_90px_rgba(0,0,0,0.9)] border border-white/20 overflow-hidden">
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center safe-modal-backdrop sm:p-4 bg-black/75 backdrop-blur-xl animate-in fade-in"
+      onClick={onClose}
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        className="ios-glass-modal rounded-3xl p-4 sm:p-7 max-w-4xl w-full max-h-[90dvh] flex flex-col space-y-4 sm:space-y-5 text-slate-100 shadow-[0_30px_90px_rgba(0,0,0,0.9)] border border-white/20 overflow-hidden"
+      >
         {/* Modal Header */}
-        <div className="flex items-center justify-between border-b border-white/10 pb-4 shrink-0">
-          <div className="flex items-center gap-3">
-            <div className="p-3 rounded-2xl bg-gradient-to-tr from-cyan-500/25 to-blue-500/20 border border-cyan-400/40 text-cyan-300 shadow-lg shadow-cyan-500/15 backdrop-blur-xl">
-              <PieChart className="w-6 h-6" />
+        <div className="flex items-center justify-between border-b border-white/10 pb-3.5 shrink-0 gap-2">
+          <div className="flex items-center gap-2.5 sm:gap-3 min-w-0">
+            <div className="p-2.5 sm:p-3 rounded-2xl bg-gradient-to-tr from-cyan-500/25 to-blue-500/20 border border-cyan-400/40 text-cyan-300 shrink-0">
+              <PieChart className="w-5 h-5 sm:w-6 sm:h-6" />
             </div>
-            <div>
-              <h3 className="font-lalezar text-xl sm:text-2xl text-slate-100">
-                آمار و خلاصه تفکیکی کالاها و اسناد
+            <div className="min-w-0">
+              <h3 className="font-lalezar text-lg sm:text-2xl text-slate-100 truncate">
+                آمار و خلاصه تفکیکی کالاها
               </h3>
-              <p className="text-xs text-slate-400 mt-0.5">
-                تعداد اسناد و کوتاژها به صورت تفکیک‌شده بر اساس نوع کالا، برند و پرونده
+              <p className="text-[11px] sm:text-xs text-slate-400 mt-0.5 truncate">
+                تعداد اسناد و کوتاژها بر اساس کالا، برند و پرونده
               </p>
             </div>
           </div>
 
           <button
+            type="button"
             onClick={onClose}
-            className="p-2.5 text-slate-400 hover:text-white rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 transition-colors cursor-pointer"
+            className="min-w-[44px] min-h-[44px] flex items-center justify-center text-slate-300 hover:text-white rounded-xl bg-white/5 hover:bg-white/10 border border-white/15 transition-colors shrink-0 cursor-pointer"
+            aria-label="بستن آمار کالاها"
           >
             <X className="w-5 h-5" />
           </button>

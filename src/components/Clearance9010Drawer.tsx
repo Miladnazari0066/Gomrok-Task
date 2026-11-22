@@ -502,30 +502,36 @@ export const Clearance9010Drawer: React.FC<Clearance9010DrawerProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 bg-black/80 backdrop-blur-2xl animate-in fade-in font-vazir dir-rtl">
-      <div className="ios-glass-modal rounded-3xl w-full max-w-4xl max-h-[94vh] flex flex-col overflow-hidden border border-white/20 shadow-[0_30px_90px_rgba(0,0,0,0.95)] text-slate-100">
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center safe-modal-backdrop sm:p-4 bg-black/80 backdrop-blur-xl animate-in fade-in font-vazir dir-rtl"
+      onClick={onClose}
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        className="ios-glass-modal rounded-3xl w-full max-w-4xl max-h-[92dvh] flex flex-col overflow-hidden border border-white/20 shadow-[0_30px_90px_rgba(0,0,0,0.95)] text-slate-100"
+      >
         {/* Header */}
-        <div className="px-5 py-4 border-b border-white/10 bg-white/[0.03] flex items-center justify-between gap-3 shrink-0">
-          <div className="flex items-center gap-3 min-w-0">
-            <div className="w-11 h-11 rounded-2xl bg-gradient-to-tr from-cyan-500/25 to-amber-500/20 border border-cyan-400/40 flex items-center justify-center text-cyan-300 shrink-0">
+        <div className="px-4 sm:px-5 py-3.5 sm:py-4 border-b border-white/10 bg-white/[0.03] flex items-center justify-between gap-2.5 shrink-0">
+          <div className="flex items-center gap-2.5 sm:gap-3 min-w-0">
+            <div className="w-9 h-9 sm:w-11 sm:h-11 rounded-2xl bg-gradient-to-tr from-cyan-500/25 to-amber-500/20 border border-cyan-400/40 flex items-center justify-center text-cyan-300 shrink-0">
               <Layers className="w-5 h-5" />
             </div>
             <div className="min-w-0">
               <div className="flex items-center gap-2 flex-wrap">
-                <h3 className="font-lalezar text-xl text-slate-100 tracking-wide">
-                  مدیریت ترخیص ۹۰/۱۰ و خروج فیزیکی · کوتاژ {fa(doc.cottage)}
+                <h3 className="font-lalezar text-base sm:text-xl text-slate-100 tracking-wide">
+                  ترخیص ۹۰/۱۰ و خروج · کوتاژ {fa(doc.cottage)}
                 </h3>
-                <span className={`px-2.5 py-0.5 rounded-full text-[11px] font-bold border ${statusMeta.badgeCls}`}>
+                <span className={`px-2 py-0.5 rounded-full text-[10px] sm:text-[11px] font-bold border ${statusMeta.badgeCls}`}>
                   {statusMeta.label}
                 </span>
               </div>
-              <p className="text-xs text-slate-400 truncate mt-0.5">
+              <p className="text-[11px] sm:text-xs text-slate-400 truncate mt-0.5">
                 {doc.goods} {doc.mdfThickness ? `· ضخامت ${doc.mdfThickness}` : ''} · پرونده {fa(doc.file)} · بارنامه {doc.bl}
               </p>
             </div>
           </div>
 
-          <div className="flex items-center gap-2 shrink-0">
+          <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
             <button
               type="button"
               onClick={() => onCreateFollowUpTask(doc)}
@@ -537,7 +543,8 @@ export const Clearance9010Drawer: React.FC<Clearance9010DrawerProps> = ({
             <button
               type="button"
               onClick={onClose}
-              className="p-2 rounded-xl text-slate-400 hover:text-white hover:bg-white/10 border border-white/10 cursor-pointer transition-colors"
+              className="min-w-[44px] min-h-[44px] flex items-center justify-center rounded-xl text-slate-300 hover:text-white hover:bg-white/10 border border-white/15 cursor-pointer transition-colors"
+              aria-label="بستن پنجره ۹۰/۱۰"
             >
               <X className="w-5 h-5" />
             </button>
@@ -545,7 +552,7 @@ export const Clearance9010Drawer: React.FC<Clearance9010DrawerProps> = ({
         </div>
 
         {/* 5-KPI Tabular Strip */}
-        <div className="grid grid-cols-2 sm:grid-cols-5 gap-2.5 px-5 py-3.5 bg-slate-950/50 border-b border-white/10 shrink-0">
+        <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 px-4 sm:px-5 py-3 bg-slate-950/50 border-b border-white/10 shrink-0">
           <div className="bg-white/5 border border-white/10 rounded-xl p-2.5 text-center">
             <span className="text-[10px] text-slate-400 block">کل پالت محموله</span>
             <b className="font-mono tabular-nums text-base text-slate-100">{fa(balances.totalPallets)}</b>

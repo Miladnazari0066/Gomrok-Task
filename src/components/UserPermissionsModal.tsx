@@ -117,8 +117,14 @@ export const UserPermissionsModal: React.FC<UserPermissionsModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-2xl animate-in fade-in">
-      <div className="ios-glass-modal rounded-3xl p-5 sm:p-7 max-w-2xl w-full max-h-[92vh] flex flex-col space-y-5 text-slate-100 shadow-[0_30px_90px_rgba(0,0,0,0.9)] border border-white/20 overflow-hidden">
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center safe-modal-backdrop sm:p-4 bg-black/75 backdrop-blur-xl animate-in fade-in"
+      onClick={onClose}
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        className="ios-glass-modal rounded-3xl p-4 sm:p-7 max-w-2xl w-full max-h-[90dvh] flex flex-col space-y-4 sm:space-y-5 text-slate-100 shadow-[0_30px_90px_rgba(0,0,0,0.9)] border border-white/20 overflow-hidden"
+      >
         {/* Header */}
         <div className="flex items-center justify-between border-b border-white/10 pb-4 shrink-0">
           <div className="flex items-center gap-3">

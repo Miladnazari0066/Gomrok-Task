@@ -212,38 +212,44 @@ export const SecurityCenterModal: React.FC<SecurityCenterModalProps> = ({
   const lockoutRemaining = getLockoutRemainingSeconds();
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/80 backdrop-blur-2xl animate-in fade-in font-vazir dir-rtl select-none">
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center safe-modal-backdrop sm:p-4 bg-black/80 backdrop-blur-xl animate-in fade-in font-vazir dir-rtl select-none"
+      onClick={onClose}
+    >
       <motion.div
+        onClick={(e) => e.stopPropagation()}
         initial={{ opacity: 0, scale: 0.94, y: 15 }}
         animate={{ opacity: 1, scale: 1, y: 0 }}
         exit={{ opacity: 0, scale: 0.94, y: 15 }}
-        className="ios-glass-modal rounded-3xl p-5 sm:p-7 max-w-3xl w-full max-h-[92vh] flex flex-col space-y-4 text-slate-100 shadow-[0_30px_90px_rgba(0,0,0,0.95)] border border-white/20 overflow-hidden"
+        className="ios-glass-modal rounded-3xl p-4 sm:p-7 max-w-3xl w-full max-h-[90dvh] flex flex-col space-y-4 text-slate-100 shadow-[0_30px_90px_rgba(0,0,0,0.95)] border border-white/20 overflow-hidden"
       >
         {/* Modal Header */}
-        <div className="flex items-center justify-between border-b border-white/10 pb-4 shrink-0">
-          <div className="flex items-center gap-3">
-            <div className="p-3 rounded-2xl bg-gradient-to-tr from-cyan-500/25 via-blue-500/20 to-emerald-500/20 border border-cyan-400/40 text-cyan-300 shadow-lg shadow-cyan-500/20 backdrop-blur-xl">
-              <ShieldCheck className="w-6 h-6 text-cyan-400" />
+        <div className="flex items-center justify-between border-b border-white/10 pb-3.5 shrink-0 gap-2">
+          <div className="flex items-center gap-2.5 sm:gap-3 min-w-0">
+            <div className="p-2.5 sm:p-3 rounded-2xl bg-gradient-to-tr from-cyan-500/25 via-blue-500/20 to-emerald-500/20 border border-cyan-400/40 text-cyan-300 shrink-0">
+              <ShieldCheck className="w-5 h-5 sm:w-6 sm:h-6 text-cyan-400" />
             </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <h3 className="font-lalezar text-xl sm:text-2xl text-slate-100">
-                  مرکز امنیت و حریم دفاعی سامانه
+            <div className="min-w-0">
+              <div className="flex items-center gap-2 flex-wrap">
+                <h3 className="font-lalezar text-lg sm:text-2xl text-slate-100">
+                  مرکز امنیت سامانه
                 </h3>
-                <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-emerald-500/20 border border-emerald-400/40 text-emerald-300">
-                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping" />
+                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] sm:text-[11px] font-bold bg-emerald-500/20 border border-emerald-400/40 text-emerald-300">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
                   <span>محافظت فعال</span>
                 </span>
               </div>
-              <p className="text-xs text-slate-400 mt-0.5">
-                پیکربندی کدهای دسترسی، دیواره محافظت بروت‌فورس، قفل خودکار و ثبت وقایع
+              <p className="text-[11px] sm:text-xs text-slate-400 mt-0.5 truncate">
+                کدهای دسترسی، محافظت بروت‌فورس، قفل خودکار و وقایع
               </p>
             </div>
           </div>
           <button
+            type="button"
             onClick={onClose}
-            className="p-2.5 rounded-full hover:bg-white/10 text-slate-400 hover:text-white transition-all cursor-pointer"
+            className="min-w-[44px] min-h-[44px] flex items-center justify-center rounded-xl bg-white/5 hover:bg-white/10 border border-white/15 text-slate-300 hover:text-white transition-all shrink-0 cursor-pointer"
             title="بستن پنجره"
+            aria-label="بستن پنجره"
           >
             <X className="w-5 h-5" />
           </button>

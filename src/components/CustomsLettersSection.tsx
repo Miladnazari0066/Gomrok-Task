@@ -724,7 +724,7 @@ export const CustomsLettersSection: React.FC<CustomsLettersSectionProps> = ({
       {/* ========================================================================= */}
       {activeZoomLetter && (
         <div
-          className="fixed inset-0 z-50 flex flex-col bg-black/95 backdrop-blur-xl animate-in fade-in duration-200"
+          className="fixed inset-0 z-50 flex flex-col pt-safe-top pb-safe-bar bg-black/95 backdrop-blur-xl animate-in fade-in duration-200"
           onClick={() => setActiveZoomLetter(null)}
         >
           {/* Lightbox Top Toolbar */}
@@ -865,25 +865,30 @@ export const CustomsLettersSection: React.FC<CustomsLettersSectionProps> = ({
       {/* ADD NEW LETTER MODAL (ADMIN ONLY)                                         */}
       {/* ========================================================================= */}
       {isAddModalOpen && userCanManage && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/80 backdrop-blur-md">
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center safe-modal-backdrop sm:p-4 bg-black/80 backdrop-blur-md"
+          onClick={() => setIsAddModalOpen(false)}
+        >
           <div
-            className="bg-[#0c142b] w-full max-w-xl rounded-2xl border border-cyan-500/30 shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-200 flex flex-col max-h-[92vh]"
+            className="bg-[#0c142b] w-full max-w-xl rounded-2xl border border-cyan-500/30 shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-200 flex flex-col max-h-[90dvh]"
             onClick={(e) => e.stopPropagation()}
           >
             {/* Modal Header */}
-            <div className="p-4 sm:p-5 border-b border-white/10 flex items-center justify-between bg-[#080d1e]">
-              <div className="flex items-center gap-2.5">
-                <div className="w-8 h-8 rounded-lg bg-amber-500/20 text-amber-400 flex items-center justify-center">
+            <div className="p-4 sm:p-5 border-b border-white/10 flex items-center justify-between gap-2 bg-[#080d1e]">
+              <div className="flex items-center gap-2.5 min-w-0">
+                <div className="w-8 h-8 rounded-lg bg-amber-500/20 text-amber-400 flex items-center justify-center shrink-0">
                   <Plus className="w-4 h-4 stroke-[2.5]" />
                 </div>
-                <div>
-                  <h3 className="text-base font-lalezar text-white">افزودن عکس نامه جدید</h3>
-                  <p className="text-xs text-slate-400">عکس نامه را وارد کرده و یک عنوان برای آن مشخص کنید</p>
+                <div className="min-w-0">
+                  <h3 className="text-base font-lalezar text-white truncate">افزودن عکس نامه جدید</h3>
+                  <p className="text-xs text-slate-400 truncate">عکس نامه را وارد کرده و یک عنوان برای آن مشخص کنید</p>
                 </div>
               </div>
               <button
+                type="button"
                 onClick={() => setIsAddModalOpen(false)}
-                className="p-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-slate-400 hover:text-white transition-colors"
+                className="min-w-[40px] min-h-[40px] flex items-center justify-center rounded-xl bg-white/5 hover:bg-white/10 border border-white/15 text-slate-300 hover:text-white transition-colors shrink-0 cursor-pointer"
+                aria-label="بستن پنجره"
               >
                 <X className="w-4 h-4" />
               </button>

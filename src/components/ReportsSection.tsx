@@ -211,17 +211,23 @@ export const ReportsSection: React.FC<ReportsSectionProps> = ({
 
       {/* POP-UP SELECTION MODAL (COMPACT, SLEEK, WITH CANCEL & CLOSE BUTTON) */}
       {showSelectionModal && (
-        <div className="print:hidden fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/80 backdrop-blur-sm animate-in fade-in">
-          <div className="bg-[#0b1324] border border-cyan-500/30 rounded-2xl p-4 sm:p-5 max-w-md w-full space-y-4 text-slate-100 shadow-2xl shadow-cyan-950/60">
+        <div
+          className="print:hidden fixed inset-0 z-50 flex items-center justify-center safe-modal-backdrop sm:p-4 bg-black/80 backdrop-blur-sm animate-in fade-in"
+          onClick={handleModalClose}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="bg-[#0b1324] border border-cyan-500/30 rounded-2xl p-4 sm:p-5 max-w-md w-full max-h-[90dvh] overflow-y-auto space-y-4 text-slate-100 shadow-2xl shadow-cyan-950/60"
+          >
             {/* Modal Header */}
             <div className="reports-modal-header border-b border-white/10 pb-3">
-              <div className="flex items-center gap-2.5">
+              <div className="flex items-center gap-2.5 min-w-0">
                 <div className="w-8 h-8 rounded-xl bg-cyan-500/15 border border-cyan-500/30 text-cyan-400 flex items-center justify-center shrink-0">
                   <FolderSearch className="w-4 h-4" />
                 </div>
-                <div>
-                  <h3 className="font-lalezar text-base sm:text-lg text-slate-100 leading-tight">تنظیم و صدور گزارش پرونده</h3>
-                  <p className="text-[11px] text-slate-400">شماره پرونده و محدوده اسناد را انتخاب کنید</p>
+                <div className="min-w-0">
+                  <h3 className="font-lalezar text-base sm:text-lg text-slate-100 leading-tight truncate">تنظیم و صدور گزارش پرونده</h3>
+                  <p className="text-[11px] text-slate-400 truncate">شماره پرونده و محدوده اسناد را انتخاب کنید</p>
                 </div>
               </div>
 
@@ -229,7 +235,7 @@ export const ReportsSection: React.FC<ReportsSectionProps> = ({
               <button
                 type="button"
                 onClick={handleModalClose}
-                className="p-1.5 text-slate-400 hover:text-rose-300 rounded-lg bg-white/5 hover:bg-rose-500/15 border border-white/10 transition-colors cursor-pointer"
+                className="min-w-[40px] min-h-[40px] flex items-center justify-center text-slate-300 hover:text-rose-300 rounded-xl bg-white/5 hover:bg-rose-500/15 border border-white/15 transition-colors shrink-0 cursor-pointer"
                 title="بستن پنجره و بازگشت"
                 aria-label="بستن"
               >

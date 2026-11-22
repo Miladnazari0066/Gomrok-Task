@@ -23,6 +23,7 @@ import { NotificationCenterDrawer } from './components/NotificationCenterDrawer'
 import { DailyTasksDrawer } from './components/DailyTasksDrawer';
 import { PWAInstallGate } from './components/PWAInstallGate';
 import { OfflineIndicator } from './components/OfflineIndicator';
+import { MobileBottomNav } from './components/MobileBottomNav';
 import { useDeviceEnvironment } from './hooks/useDeviceEnvironment';
 import {
   initializeSecurity,
@@ -2095,34 +2096,32 @@ export default function App() {
   }
 
   return (
-    <div className="min-h-[100svh] bg-transparent text-[#f1f5f9] pb-20 sm:pb-24 pb-safe relative overflow-x-clip selection:bg-cyan-500/30">
+    <div className="min-h-[100dvh] bg-transparent text-[#f1f5f9] pb-[calc(5.25rem+env(safe-area-inset-bottom))] md:pb-24 relative overflow-x-clip selection:bg-cyan-500/30">
       <OfflineIndicator />
 
-      {/* Top Bar */}
-      <div className="relative z-20">
-        <Navbar
-          onLogout={handleLogout}
-          onOpenCloudDb={activePermissions.canAccessCloudDb ? () => setIsCloudDbModalOpen(true) : undefined}
-          onManualSync={activePermissions.canAccessCloudDb ? handleManualCloudSync : undefined}
-          onOpenSummaryModal={activePermissions.canViewSummaryModal ? () => setIsSummaryModalOpen(true) : undefined}
-          onOpenSecurityCenter={() => setIsSecurityModalOpen(true)}
-          onOpenNotifications={() => setIsNotificationDrawerOpen(true)}
-          onOpenDailyTasks={() => setIsDailyTasksDrawerOpen(true)}
-          unreadNotificationsCount={unreadNotificationsCount}
-          pendingTasksCount={pendingTasksCount}
-          overdueTasksCount={overdueTasksCount}
-          activeOperator={activeOperator}
-          onSwitchOperator={userRole === 'admin' ? handleSwitchOperator : undefined}
-          isDefaultPasswordActive={isUsingDefaultPasswords()}
-          lastCloudSyncTime={lastCloudSyncTime}
-          isCloudSyncing={isCloudSyncing}
-          currentUser={currentUser}
-          userRole={userRole}
-        />
-      </div>
+      {/* Top Bar (direct sticky child with safe-area top inset and proper z-40 stacking) */}
+      <Navbar
+        onLogout={handleLogout}
+        onOpenCloudDb={activePermissions.canAccessCloudDb ? () => setIsCloudDbModalOpen(true) : undefined}
+        onManualSync={activePermissions.canAccessCloudDb ? handleManualCloudSync : undefined}
+        onOpenSummaryModal={activePermissions.canViewSummaryModal ? () => setIsSummaryModalOpen(true) : undefined}
+        onOpenSecurityCenter={() => setIsSecurityModalOpen(true)}
+        onOpenNotifications={() => setIsNotificationDrawerOpen(true)}
+        onOpenDailyTasks={() => setIsDailyTasksDrawerOpen(true)}
+        unreadNotificationsCount={unreadNotificationsCount}
+        pendingTasksCount={pendingTasksCount}
+        overdueTasksCount={overdueTasksCount}
+        activeOperator={activeOperator}
+        onSwitchOperator={userRole === 'admin' ? handleSwitchOperator : undefined}
+        isDefaultPasswordActive={isUsingDefaultPasswords()}
+        lastCloudSyncTime={lastCloudSyncTime}
+        isCloudSyncing={isCloudSyncing}
+        currentUser={currentUser}
+        userRole={userRole}
+      />
 
-      {/* Tabs Navigation - Floating Glass Capsule Dock */}
-      <nav className="relative z-10 max-w-[1460px] mx-auto px-3 sm:px-6 pt-3 sm:pt-5">
+      {/* Tabs Navigation - Desktop & Tablet Floating Glass Capsule Dock (mobile uses MobileBottomNav) */}
+      <nav className="hidden md:block relative z-10 max-w-[1460px] mx-auto px-3 sm:px-6 pt-3 sm:pt-5">
         <div className="flex items-center justify-between pb-3 sm:pb-4 border-b border-white/8">
           <div className="w-full sm:w-auto ios-glass-pill p-1.5 sm:p-2 rounded-2xl sm:rounded-full grid grid-cols-2 sm:grid-cols-4 lg:flex lg:items-center gap-1.5 sm:gap-2">
             {/* Section 1: ورود کالا */}
@@ -2273,7 +2272,7 @@ export default function App() {
       </nav>
 
       {/* Main Content Area */}
-      <main className="relative z-10 max-w-[1460px] mx-auto px-3 sm:px-6 pt-5 sm:pt-6">
+      <main className="relative z-10 max-w-[1460px] mx-auto px-3 sm:px-6 pt-3 sm:pt-5 md:pt-6">
         <AnimatePresence mode="wait">
           {/* SECTION 1: GOODS ENTRY (ورود کالا) */}
           {mainTab === 'entry' && (
@@ -2431,7 +2430,7 @@ export default function App() {
 
                       {/* Status Filter Chips */}
                       <div className="flex items-center justify-between gap-2 flex-wrap pt-2 border-t border-white/5">
-                        <div className="flex gap-1.5 flex-wrap text-xs">
+                        <div className="flex gap-1.5 overflow-x-auto no-scrollbar sm:flex-wrap text-xs max-w-full pb-0.5">
                           {[
                             { id: 'all', label: 'همه' },
                             { id: '1', label: 'در حال تخلیه' },
@@ -2443,7 +2442,7 @@ export default function App() {
                             <button
                               key={f.id}
                               onClick={() => setEntryFilter(f.id as EntryFilterType)}
-                              className={`min-h-[36px] px-3 py-1.5 rounded-xl border transition-colors ${
+                              className={`min-h-[40px] px-3 py-1.5 rounded-xl border whitespace-nowrap shrink-0 transition-colors cursor-pointer ${
                                 entryFilter === f.id
                                   ? 'bg-cyan-500/20 text-cyan-300 font-bold border-cyan-500/40'
                                   : 'border-white/10 text-slate-400 hover:text-white hover:bg-white/5'
@@ -2843,7 +2842,7 @@ export default function App() {
 
                       {/* Status Filter Chips */}
                       <div className="flex items-center justify-between gap-2 flex-wrap pt-2 border-t border-white/5">
-                        <div className="flex gap-1.5 flex-wrap text-xs">
+                        <div className="flex gap-1.5 overflow-x-auto no-scrollbar sm:flex-wrap text-xs max-w-full pb-0.5">
                           {[
                             { id: 'all', label: 'همه' },
                             { id: 'progress', label: 'در حال انجام' },
@@ -2853,7 +2852,7 @@ export default function App() {
                             <button
                               key={f.id}
                               onClick={() => setExitFilter(f.id as ExitFilterType)}
-                              className={`min-h-[36px] px-3 py-1.5 rounded-xl border transition-colors ${
+                              className={`min-h-[40px] px-3 py-1.5 rounded-xl border whitespace-nowrap shrink-0 transition-colors cursor-pointer ${
                                 exitFilter === f.id
                                   ? 'bg-blue-500/20 text-blue-300 font-bold border-blue-500/40'
                                   : 'border-white/10 text-slate-400 hover:text-white hover:bg-white/5'
@@ -3073,6 +3072,21 @@ export default function App() {
           )}
         </AnimatePresence>
       </main>
+
+      {/* Fixed Thumb-Reachable Bottom Tab Bar (Mobile Only) */}
+      <MobileBottomNav
+        activeTab={mainTab}
+        onSelectTab={(tab) => {
+          setMainTab(tab);
+          window.scrollTo({ top: 0, behavior: 'smooth' });
+        }}
+        canViewEntry={activePermissions.canViewEntry}
+        canViewExit={activePermissions.canViewExit}
+        canViewReports={activePermissions.canViewReports}
+        canViewLetters={activePermissions.canViewLetters !== false}
+        entryCount={docs.length}
+        exitCount={exits.length}
+      />
 
       {/* Toast Container */}
       <ToastContainer toasts={toasts} onDismiss={removeToast} />

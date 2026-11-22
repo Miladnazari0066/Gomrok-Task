@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Printer,
   Edit2,
@@ -25,6 +25,7 @@ import {
   ShieldCheck,
   Lock,
   Unlock,
+  ChevronDown,
 } from 'lucide-react';
 import { ExitDoc, Batch, LabRecord, EntryDoc, PhysicalExitTransaction } from '../types';
 import { fa, fmtJ, daysUntil, remTxt, esc, addMonthsJ } from '../utils/jalali';
@@ -65,6 +66,13 @@ export const ExitCard: React.FC<ExitCardProps> = ({
   canUpdateStages = true,
 }) => {
   const [menuOpen, setMenuOpen] = useState(false);
+  const [mobileExpanded, setMobileExpanded] = useState(false);
+
+  useEffect(() => {
+    if (isHighlighted) {
+      setMobileExpanded(true);
+    }
+  }, [isHighlighted]);
 
   const linkedEntryDoc = React.useMemo(() => {
     if (doc.entryDocId) {
@@ -194,34 +202,34 @@ export const ExitCard: React.FC<ExitCardProps> = ({
       style={{ borderRightWidth: '4px', borderRightColor: currentCfg.color }}
     >
       {/* Top Header */}
-      <div className="flex items-center justify-between gap-3 flex-wrap mb-3.5 relative z-10">
-        <div className="flex items-center gap-2 sm:gap-2.5 flex-wrap">
-          <span className="font-lalezar text-xl sm:text-2xl text-slate-100 tracking-wide flex items-center gap-1.5">
-            <span className="text-xs text-slate-400 font-sans font-medium">کوتاژ:</span>
+      <div className="flex items-start sm:items-center justify-between gap-2.5 sm:gap-3 flex-wrap mb-2.5 md:mb-3.5 relative z-10">
+        <div className="flex items-center gap-1.5 sm:gap-2.5 flex-wrap">
+          <span className="font-lalezar text-lg sm:text-2xl text-slate-100 tracking-wide flex items-center gap-1.5">
+            <span className="text-[11px] sm:text-xs text-slate-400 font-sans font-medium">کوتاژ:</span>
             {fa(doc.cottage)}
           </span>
 
           {/* Highlighted File/Case Number Badge */}
-          <div className="flex items-center gap-1.5 px-2.5 sm:px-3 py-1 rounded-xl bg-gradient-to-r from-amber-500/20 to-orange-500/15 border border-amber-400/45 text-amber-200 text-xs font-bold">
+          <div className="flex items-center gap-1 px-2 sm:px-3 py-0.5 sm:py-1 rounded-xl bg-gradient-to-r from-amber-500/20 to-orange-500/15 border border-amber-400/45 text-amber-200 text-[11px] sm:text-xs font-bold">
             <FolderKanban className="w-3.5 h-3.5 text-amber-400 shrink-0" />
-            <span>پرونده:</span>
-            <span className="font-mono text-amber-100 tracking-wider text-sm font-black">{fa(doc.file)}</span>
+            <span className="hidden sm:inline">پرونده:</span>
+            <span className="font-mono text-amber-100 tracking-wider text-xs sm:text-sm font-black">{fa(doc.file)}</span>
           </div>
 
-          <span className="bg-slate-900/90 border border-cyan-500/30 px-2.5 sm:px-3 py-1 rounded-xl text-xs ltr font-mono text-cyan-300 font-bold tracking-widest">
+          <span className="hidden md:inline-block bg-slate-900/90 border border-cyan-500/30 px-2.5 sm:px-3 py-1 rounded-xl text-xs ltr font-mono text-cyan-300 font-bold tracking-widest">
             {doc.bl}
           </span>
-          <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold border ${currentCfg.badgeCls}`}>
-            <span className="w-2 h-2 rounded-full bg-current" />
+          <span className={`inline-flex items-center gap-1.5 px-2.5 sm:px-3 py-0.5 sm:py-1 rounded-full text-[11px] sm:text-xs font-bold border ${currentCfg.badgeCls}`}>
+            <span className="w-1.5 h-1.5 sm:w-2 sm:h-2 rounded-full bg-current" />
             {currentCfg.label}
           </span>
           {batch && (
-            <span className="bg-cyan-500/15 border border-cyan-400/40 text-cyan-300 text-xs font-bold px-3 py-0.5 rounded-full">
+            <span className="hidden md:inline-block bg-cyan-500/15 border border-cyan-400/40 text-cyan-300 text-xs font-bold px-3 py-0.5 rounded-full">
               تجمیع {doc.batchId}
             </span>
           )}
           {doc.partialExit?.isPartial && (
-            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-xl bg-gradient-to-r from-amber-500/20 via-orange-500/15 to-emerald-500/15 border border-amber-400/50 text-amber-200 text-xs font-bold">
+            <span className="hidden md:inline-flex items-center gap-1.5 px-3 py-1 rounded-xl bg-gradient-to-r from-amber-500/20 via-orange-500/15 to-emerald-500/15 border border-amber-400/50 text-amber-200 text-xs font-bold">
               <Percent className="w-3.5 h-3.5 text-amber-400 shrink-0" />
               <span>خروج {fa(doc.partialExit.exitPercent)}٪</span>
               <span className="text-emerald-300 font-mono">({fa(doc.partialExit.exitPallets)} پالت)</span>
@@ -231,13 +239,13 @@ export const ExitCard: React.FC<ExitCardProps> = ({
           )}
         </div>
 
-        {/* Action Buttons */}
-        <div className="flex items-center gap-2 flex-wrap shrink-0">
+        {/* Action Buttons (always visible on md+, revealed when expanded on mobile) */}
+        <div className={`${mobileExpanded ? 'flex' : 'hidden'} md:flex items-center gap-2 flex-wrap shrink-0 w-full md:w-auto pt-1 md:pt-0`}>
           {linkedEntryDoc && onOpenClearance9010 && (
             <button
               type="button"
               onClick={() => onOpenClearance9010(linkedEntryDoc)}
-              className="min-h-[38px] flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl border border-amber-400/50 bg-amber-500/15 hover:bg-amber-500/25 text-amber-200 text-xs font-bold transition-colors active:scale-95 cursor-pointer"
+              className="hidden md:flex min-h-[38px] items-center gap-1.5 px-3.5 py-1.5 rounded-xl border border-amber-400/50 bg-amber-500/15 hover:bg-amber-500/25 text-amber-200 text-xs font-bold transition-colors active:scale-95 cursor-pointer"
               title="مدیریت ۹۰/۱۰، ساتا و خروج فیزیکی کوتاژ مرجع"
             >
               <ShieldCheck className="w-3.5 h-3.5 text-amber-400" />
@@ -247,7 +255,7 @@ export const ExitCard: React.FC<ExitCardProps> = ({
           <button
             type="button"
             onClick={handlePrint}
-            className="min-h-[38px] flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl border border-cyan-400/40 bg-cyan-500/15 hover:bg-cyan-500/25 text-cyan-200 text-xs font-bold transition-colors active:scale-95 cursor-pointer"
+            className="min-h-[42px] md:min-h-[38px] flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl border border-cyan-400/40 bg-cyan-500/15 hover:bg-cyan-500/25 text-cyan-200 text-xs font-bold transition-colors active:scale-95 cursor-pointer"
             title="پرینت قبض‌های خروج"
           >
             <Printer className="w-3.5 h-3.5 text-cyan-400" />
@@ -257,7 +265,7 @@ export const ExitCard: React.FC<ExitCardProps> = ({
             <button
               type="button"
               onClick={() => onEdit(doc)}
-              className="min-h-[38px] flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl border border-blue-400/40 bg-blue-500/15 hover:bg-blue-500/25 text-blue-200 text-xs font-bold transition-colors active:scale-95 cursor-pointer"
+              className="min-h-[42px] md:min-h-[38px] flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl border border-blue-400/40 bg-blue-500/15 hover:bg-blue-500/25 text-blue-200 text-xs font-bold transition-colors active:scale-95 cursor-pointer"
               title="ویرایش این سند خروج"
             >
               <Edit2 className="w-3.5 h-3.5 text-blue-400" />
@@ -268,7 +276,7 @@ export const ExitCard: React.FC<ExitCardProps> = ({
             <button
               type="button"
               onClick={() => onDelete(doc.id)}
-              className="min-h-[38px] flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl border border-rose-500/40 bg-rose-500/15 hover:bg-rose-500/25 text-rose-200 text-xs font-bold transition-colors active:scale-95 cursor-pointer"
+              className="min-h-[42px] md:min-h-[38px] flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl border border-rose-500/40 bg-rose-500/15 hover:bg-rose-500/25 text-rose-200 text-xs font-bold transition-colors active:scale-95 cursor-pointer"
               title="حذف این سند خروج"
             >
               <Trash2 className="w-3.5 h-3.5 text-rose-400" />
@@ -278,8 +286,71 @@ export const ExitCard: React.FC<ExitCardProps> = ({
         </div>
       </div>
 
+      {/* Compact Mobile Summary & Quick Actions (< md) */}
+      <div className="md:hidden space-y-2.5 relative z-10">
+        <div className="flex items-center gap-1.5 flex-wrap text-[11px] text-slate-300">
+          <span className="font-bold text-slate-100 truncate max-w-[155px]">{esc(doc.importer)}</span>
+          <span className="text-slate-500">·</span>
+          <span className="text-cyan-300 font-semibold truncate max-w-[135px]">{esc(doc.goods)}</span>
+          {doc.pallets > 0 && (
+            <>
+              <span className="text-slate-500">·</span>
+              <span className="text-purple-300 font-mono font-bold">{fa(doc.pallets)} پالت</span>
+            </>
+          )}
+        </div>
+
+        {linkedEntryDoc && linkedBalance && (
+          <div className="flex items-center justify-between gap-2 px-2.5 py-1.5 rounded-xl bg-slate-950/65 border border-white/10 text-[11px]">
+            <span className="font-mono text-emerald-300">
+              خروج: {fa(linkedBalance.totalExited)}/{fa(linkedBalance.totalPallets)} پالت
+            </span>
+            {linkedBalance.remainingPallets > 0 ? (
+              <span
+                className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold border ${
+                  linkedBalance.sataConfirmed
+                    ? 'bg-emerald-500/15 border-emerald-500/40 text-emerald-300'
+                    : 'bg-rose-500/15 border-rose-500/40 text-rose-300'
+                }`}
+              >
+                {linkedBalance.sataConfirmed ? <Unlock className="w-2.5 h-2.5" /> : <Lock className="w-2.5 h-2.5" />}
+                {linkedBalance.sataConfirmed ? '۱۰٪ آزاد' : '۱۰٪ قفل ساتا'}
+              </span>
+            ) : (
+              <span className="text-amber-300 font-mono">مانده: {fa(linkedBalance.totalRemaining)}</span>
+            )}
+          </div>
+        )}
+
+        <div className="flex items-center gap-2">
+          {linkedEntryDoc && onOpenClearance9010 && (
+            <button
+              type="button"
+              onClick={() => onOpenClearance9010(linkedEntryDoc)}
+              className="min-h-[44px] flex items-center justify-center gap-1.5 px-3.5 py-2 rounded-xl border border-amber-400/50 bg-amber-500/15 hover:bg-amber-500/25 text-amber-200 text-xs font-bold transition-colors active:scale-95 shrink-0 cursor-pointer"
+            >
+              <ShieldCheck className="w-4 h-4 text-amber-400" />
+              <span>۹۰/۱۰ و خروج</span>
+            </button>
+          )}
+
+          <button
+            type="button"
+            onClick={() => setMobileExpanded((prev) => !prev)}
+            className="flex-1 min-h-[44px] px-3 py-2 rounded-xl bg-white/[0.04] hover:bg-white/[0.08] border border-white/12 flex items-center justify-between text-xs font-bold text-slate-200 transition-colors active:scale-[0.99] cursor-pointer"
+          >
+            <span>{mobileExpanded ? 'بستن مراحل' : 'مراحل و جزئیات'}</span>
+            <ChevronDown
+              className={`w-4 h-4 text-blue-400 transition-transform duration-200 ${mobileExpanded ? 'rotate-180' : ''}`}
+            />
+          </button>
+        </div>
+      </div>
+
+      {/* Collapsible Full Details on Mobile (Always Expanded on md+) */}
+      <div className={`${mobileExpanded ? 'block mt-3 pt-3 border-t border-white/10' : 'hidden'} md:block`}>
       {/* Meta Bar */}
-      <div className="flex items-center gap-3.5 flex-wrap text-xs text-slate-300 mb-4 relative z-10">
+      <div className="flex items-center gap-2.5 sm:gap-3.5 flex-wrap text-xs text-slate-300 mb-4 relative z-10">
         <span className="flex items-center gap-1.5 bg-white/5 border border-white/10 px-2.5 py-1 rounded-lg">
           <Calendar className="w-3.5 h-3.5 text-amber-400" />
           <span className="text-slate-400">پرونده:</span> <b className="font-mono text-slate-100">{fa(doc.file)}</b>
@@ -843,6 +914,7 @@ export const ExitCard: React.FC<ExitCardProps> = ({
             </div>
           )}
         </div>
+      </div>
       </div>
     </div>
   );

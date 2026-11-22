@@ -230,28 +230,34 @@ export const DailyTasksDrawer: React.FC<DailyTasksDrawerProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex justify-end bg-black/70 backdrop-blur-md animate-in fade-in font-vazir dir-rtl">
-      <div className="w-full max-w-2xl h-full ios-glass-modal border-r border-white/20 flex flex-col shadow-[0_0_80px_rgba(0,0,0,0.9)] text-slate-100">
+    <div
+      className="fixed inset-0 z-50 flex justify-end bg-black/70 backdrop-blur-md animate-in fade-in font-vazir dir-rtl"
+      onClick={onClose}
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        className="w-full max-w-2xl h-[100dvh] pt-safe-top pb-safe-bar ios-glass-modal border-r border-white/20 flex flex-col shadow-[0_0_80px_rgba(0,0,0,0.9)] text-slate-100"
+      >
         {/* Header */}
-        <div className="px-5 py-4 border-b border-white/10 bg-white/[0.03] flex items-center justify-between gap-3 shrink-0">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-emerald-500/25 to-cyan-500/20 border border-emerald-400/40 flex items-center justify-center text-emerald-300">
+        <div className="px-4 sm:px-5 py-3.5 sm:py-4 border-b border-white/10 bg-white/[0.03] flex items-center justify-between gap-2.5 shrink-0">
+          <div className="flex items-center gap-2.5 sm:gap-3 min-w-0">
+            <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-2xl bg-gradient-to-tr from-emerald-500/25 to-cyan-500/20 border border-emerald-400/40 flex items-center justify-center text-emerald-300 shrink-0">
               <ClipboardList className="w-5 h-5" />
             </div>
-            <div>
-              <h3 className="font-lalezar text-xl text-slate-100">مدیریت کارهای روزانه و پیگیری پرونده‌ها</h3>
-              <p className="text-[11px] text-slate-400">
-                ثبت دستی و تولید هوشمند کارهای پیگیری ساتا، آزمایشگاه، مدارک و خروج فیزیکی
+            <div className="min-w-0">
+              <h3 className="font-lalezar text-lg sm:text-xl text-slate-100 truncate">مدیریت کارهای روزانه</h3>
+              <p className="text-[11px] text-slate-400 truncate">
+                پیگیری ساتا، آزمایشگاه، مدارک و خروج فیزیکی
               </p>
             </div>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
             {canManage && (
               <button
                 type="button"
                 onClick={openCreateForm}
-                className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl ios-glass-btn-primary text-xs font-bold cursor-pointer"
+                className="min-h-[42px] flex items-center gap-1.5 px-3 sm:px-3.5 py-2 rounded-xl ios-glass-btn-primary text-xs font-bold cursor-pointer"
               >
                 <Plus className="w-4 h-4" />
                 <span>کار جدید</span>
@@ -260,7 +266,8 @@ export const DailyTasksDrawer: React.FC<DailyTasksDrawerProps> = ({
             <button
               type="button"
               onClick={onClose}
-              className="p-2 rounded-xl text-slate-400 hover:text-white hover:bg-white/10 border border-white/10 cursor-pointer"
+              className="min-w-[44px] min-h-[44px] flex items-center justify-center rounded-xl text-slate-300 hover:text-white hover:bg-white/10 border border-white/15 cursor-pointer"
+              aria-label="بستن کارهای روزانه"
             >
               <X className="w-5 h-5" />
             </button>

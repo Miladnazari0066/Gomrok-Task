@@ -261,8 +261,14 @@ export const CloudDbSyncModal: React.FC<CloudDbSyncModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-2xl animate-in fade-in duration-200">
-      <div className="relative w-full max-w-3xl rounded-3xl ios-glass-modal border border-white/20 shadow-[0_30px_90px_rgba(0,0,0,0.9)] overflow-hidden flex flex-col max-h-[90vh]">
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center safe-modal-backdrop sm:p-4 bg-black/75 backdrop-blur-xl animate-in fade-in duration-200"
+      onClick={onClose}
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        className="relative w-full max-w-3xl rounded-3xl ios-glass-modal border border-white/20 shadow-[0_30px_90px_rgba(0,0,0,0.9)] overflow-hidden flex flex-col max-h-[90dvh]"
+      >
         {/* Header */}
         <div className="px-6 py-5 border-b border-white/10 flex items-center justify-between bg-white/[0.03] backdrop-blur-md">
           <div className="flex items-center gap-3">

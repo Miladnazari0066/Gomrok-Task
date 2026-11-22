@@ -138,107 +138,128 @@ export const JalaliDatePicker: React.FC<JalaliDatePickerProps> = ({
       </div>
 
       {isOpen && (
-        <div className="absolute top-full left-0 mt-2 z-50 w-72 ios-glass-modal p-3.5 shadow-2xl rounded-3xl border border-white/20 animate-in fade-in slide-in-from-top-2">
-          {/* Calendar Header */}
-          <div className="flex items-center justify-between gap-1 mb-3">
-            <button
-              type="button"
-              onClick={handlePrevMonth}
-              className="w-8 h-8 rounded-xl border border-white/15 hover:border-amber-400 hover:text-amber-300 flex items-center justify-center text-sm text-slate-300 transition-colors backdrop-blur-md bg-white/5"
-            >
-              <ChevronRight className="w-4 h-4" />
-            </button>
-
-            <div className="flex gap-1.5 flex-1 justify-center">
-              <select
-                value={viewMonth}
-                onChange={(e) => setViewMonth(parseInt(e.target.value, 10))}
-                className="bg-slate-900/80 border border-white/15 rounded-xl px-2 py-1 text-xs text-slate-100 outline-none text-center"
+        <div
+          className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-black/65 backdrop-blur-sm sm:static sm:block sm:p-0 sm:bg-transparent sm:backdrop-blur-none"
+          onClick={() => setIsOpen(false)}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="w-full max-w-[320px] sm:w-72 sm:absolute sm:top-full sm:left-0 sm:mt-2 z-50 ios-glass-modal p-4 sm:p-3.5 shadow-2xl rounded-3xl border border-white/20 animate-in fade-in slide-in-from-top-2"
+          >
+            {/* Mobile Sheet Title + Close */}
+            <div className="flex sm:hidden items-center justify-between pb-2.5 mb-2.5 border-b border-white/10">
+              <span className="font-lalezar text-base text-slate-100">انتخاب تاریخ شمسی</span>
+              <button
+                type="button"
+                onClick={() => setIsOpen(false)}
+                className="min-w-[38px] min-h-[38px] rounded-xl bg-white/5 border border-white/10 flex items-center justify-center text-slate-300 cursor-pointer"
+                aria-label="بستن تقویم"
               >
-                {JMONTHS.map((m, i) => (
-                  <option key={i} value={i + 1} className="bg-slate-900 text-slate-100">
-                    {m}
-                  </option>
-                ))}
-              </select>
-
-              <select
-                value={viewYear}
-                onChange={(e) => setViewYear(parseInt(e.target.value, 10))}
-                className="bg-slate-900/80 border border-white/15 rounded-xl px-2 py-1 text-xs text-slate-100 outline-none text-center"
-              >
-                {yearOptions.map((y) => (
-                  <option key={y} value={y} className="bg-slate-900 text-slate-100">
-                    {fa(y)}
-                  </option>
-                ))}
-              </select>
+                <X className="w-4 h-4" />
+              </button>
             </div>
 
-            <button
-              type="button"
-              onClick={handleNextMonth}
-              className="w-8 h-8 rounded-xl border border-white/15 hover:border-amber-400 hover:text-amber-300 flex items-center justify-center text-sm text-slate-300 transition-colors backdrop-blur-md bg-white/5"
-            >
-              <ChevronLeft className="w-4 h-4" />
-            </button>
-          </div>
+            {/* Calendar Header */}
+            <div className="flex items-center justify-between gap-1 mb-3">
+              <button
+                type="button"
+                onClick={handlePrevMonth}
+                className="w-9 h-9 sm:w-8 sm:h-8 rounded-xl border border-white/15 hover:border-amber-400 hover:text-amber-300 flex items-center justify-center text-sm text-slate-300 transition-colors bg-white/5 cursor-pointer"
+              >
+                <ChevronRight className="w-4 h-4" />
+              </button>
 
-          {/* Weekday headers */}
-          <div className="grid grid-cols-7 text-center text-[10px] text-slate-400 mb-1.5 font-semibold">
-            <span>ش</span>
-            <span>ی</span>
-            <span>د</span>
-            <span>س</span>
-            <span>چ</span>
-            <span>پ</span>
-            <span>ج</span>
-          </div>
-
-          {/* Grid Days */}
-          <div className="grid grid-cols-7 gap-1 text-center">
-            {Array.from({ length: firstDayOfWeek }).map((_, i) => (
-              <span key={`empty-${i}`} />
-            ))}
-
-            {Array.from({ length: monthDays }).map((_, i) => {
-              const d = i + 1;
-              const isSelected =
-                value &&
-                value.jy === viewYear &&
-                value.jm === viewMonth &&
-                value.jd === d;
-              const isToday =
-                t.jy === viewYear && t.jm === viewMonth && t.jd === d;
-
-              return (
-                <button
-                  key={d}
-                  type="button"
-                  onClick={() => handleSelectDay(d)}
-                  className={`py-1.5 rounded-xl text-xs font-medium transition-all ${
-                    isSelected
-                      ? 'bg-gradient-to-r from-amber-400 to-amber-500 text-slate-950 font-bold shadow-md shadow-amber-500/30'
-                      : isToday
-                      ? 'border border-cyan-400/80 text-cyan-300 bg-cyan-500/10'
-                      : 'text-slate-300 hover:bg-white/10 hover:text-slate-100'
-                  }`}
+              <div className="flex gap-1.5 flex-1 justify-center">
+                <select
+                  value={viewMonth}
+                  onChange={(e) => setViewMonth(parseInt(e.target.value, 10))}
+                  className="bg-slate-900/80 border border-white/15 rounded-xl px-2 py-1.5 sm:py-1 text-xs text-slate-100 outline-none text-center"
                 >
-                  {fa(d)}
-                </button>
-              );
-            })}
-          </div>
+                  {JMONTHS.map((m, i) => (
+                    <option key={i} value={i + 1} className="bg-slate-900 text-slate-100">
+                      {m}
+                    </option>
+                  ))}
+                </select>
 
-          {/* Today Button */}
-          <div className="mt-3 text-center border-t border-white/10 pt-2.5">
-            <button
-              type="button"
-              onClick={handleToday}
-              className="text-xs text-cyan-200 hover:text-white bg-cyan-500/15 hover:bg-cyan-500/25 border border-cyan-400/30 px-3 py-1 rounded-full transition-colors backdrop-blur-md shadow-sm"
-            >
-              امروز ({fmtJ(t)})
-            </button>
+                <select
+                  value={viewYear}
+                  onChange={(e) => setViewYear(parseInt(e.target.value, 10))}
+                  className="bg-slate-900/80 border border-white/15 rounded-xl px-2 py-1.5 sm:py-1 text-xs text-slate-100 outline-none text-center"
+                >
+                  {yearOptions.map((y) => (
+                    <option key={y} value={y} className="bg-slate-900 text-slate-100">
+                      {fa(y)}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <button
+                type="button"
+                onClick={handleNextMonth}
+                className="w-9 h-9 sm:w-8 sm:h-8 rounded-xl border border-white/15 hover:border-amber-400 hover:text-amber-300 flex items-center justify-center text-sm text-slate-300 transition-colors bg-white/5 cursor-pointer"
+              >
+                <ChevronLeft className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Weekday headers */}
+            <div className="grid grid-cols-7 text-center text-[10px] text-slate-400 mb-1.5 font-semibold">
+              <span>ش</span>
+              <span>ی</span>
+              <span>د</span>
+              <span>س</span>
+              <span>چ</span>
+              <span>پ</span>
+              <span>ج</span>
+            </div>
+
+            {/* Grid Days */}
+            <div className="grid grid-cols-7 gap-1 text-center">
+              {Array.from({ length: firstDayOfWeek }).map((_, i) => (
+                <span key={`empty-${i}`} />
+              ))}
+
+              {Array.from({ length: monthDays }).map((_, i) => {
+                const d = i + 1;
+                const isSelected =
+                  value &&
+                  value.jy === viewYear &&
+                  value.jm === viewMonth &&
+                  value.jd === d;
+                const isToday =
+                  t.jy === viewYear && t.jm === viewMonth && t.jd === d;
+
+                return (
+                  <button
+                    key={d}
+                    type="button"
+                    onClick={() => handleSelectDay(d)}
+                    className={`min-h-[38px] sm:min-h-[30px] py-1.5 rounded-xl text-xs font-medium transition-all cursor-pointer ${
+                      isSelected
+                        ? 'bg-gradient-to-r from-amber-400 to-amber-500 text-slate-950 font-bold shadow-md shadow-amber-500/30'
+                        : isToday
+                        ? 'border border-cyan-400/80 text-cyan-300 bg-cyan-500/10'
+                        : 'text-slate-300 hover:bg-white/10 hover:text-slate-100'
+                    }`}
+                  >
+                    {fa(d)}
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* Today Button */}
+            <div className="mt-3 text-center border-t border-white/10 pt-2.5">
+              <button
+                type="button"
+                onClick={handleToday}
+                className="min-h-[38px] sm:min-h-0 text-xs text-cyan-200 hover:text-white bg-cyan-500/15 hover:bg-cyan-500/25 border border-cyan-400/30 px-4 py-1.5 sm:py-1 rounded-full transition-colors shadow-sm cursor-pointer"
+              >
+                امروز ({fmtJ(t)})
+              </button>
+            </div>
           </div>
         </div>
       )}

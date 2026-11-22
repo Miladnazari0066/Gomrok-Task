@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Truck,
   Calendar,
@@ -14,6 +14,7 @@ import {
   Layers,
   FolderKanban,
   ClipboardList,
+  ChevronDown,
 } from 'lucide-react';
 import { EntryDoc, Batch } from '../types';
 import { fa, fmtJ, esc } from '../utils/jalali';
@@ -49,6 +50,14 @@ export const EntryCard: React.FC<EntryCardProps> = ({
   canEdit = true,
   canDelete = true,
 }) => {
+  const [mobileExpanded, setMobileExpanded] = useState(false);
+
+  useEffect(() => {
+    if (isHighlighted) {
+      setMobileExpanded(true);
+    }
+  }, [isHighlighted]);
+
   // Determine current stage & color theme
   let stage = 1;
   if (doc.unloaded < doc.trailers) stage = 1;
@@ -90,65 +99,65 @@ export const EntryCard: React.FC<EntryCardProps> = ({
       style={{ borderRightWidth: '4px', borderRightColor: currentStageCfg.color }}
     >
       {/* Top Header Row */}
-      <div className="flex items-center justify-between gap-3 flex-wrap mb-3.5 relative z-10">
-        <div className="flex items-center gap-2 sm:gap-2.5 flex-wrap">
-          <span className="font-lalezar text-xl sm:text-2xl text-slate-100 tracking-wide flex items-center gap-1.5">
-            <span className="text-xs text-slate-400 font-sans font-medium">کوتاژ:</span>
+      <div className="flex items-start sm:items-center justify-between gap-2.5 sm:gap-3 flex-wrap mb-2.5 md:mb-3.5 relative z-10">
+        <div className="flex items-center gap-1.5 sm:gap-2.5 flex-wrap">
+          <span className="font-lalezar text-lg sm:text-2xl text-slate-100 tracking-wide flex items-center gap-1.5">
+            <span className="text-[11px] sm:text-xs text-slate-400 font-sans font-medium">کوتاژ:</span>
             {fa(doc.cottage)}
           </span>
 
           {/* Highlighted File/Case Number Badge */}
-          <div className="flex items-center gap-1.5 px-2.5 sm:px-3 py-1 rounded-xl bg-gradient-to-r from-amber-500/20 to-orange-500/15 border border-amber-400/45 text-amber-200 text-xs font-bold">
+          <div className="flex items-center gap-1 px-2 sm:px-3 py-0.5 sm:py-1 rounded-xl bg-gradient-to-r from-amber-500/20 to-orange-500/15 border border-amber-400/45 text-amber-200 text-[11px] sm:text-xs font-bold">
             <FolderKanban className="w-3.5 h-3.5 text-amber-400 shrink-0" />
-            <span>پرونده:</span>
-            <span className="font-mono text-amber-100 tracking-wider text-sm font-black">{fa(doc.file)}</span>
+            <span className="hidden sm:inline">پرونده:</span>
+            <span className="font-mono text-amber-100 tracking-wider text-xs sm:text-sm font-black">{fa(doc.file)}</span>
           </div>
 
-          <span className="bg-slate-900/90 border border-cyan-500/30 px-2.5 sm:px-3 py-1 rounded-xl text-xs ltr font-mono text-cyan-300 font-bold tracking-widest">
+          <span className="hidden md:inline-block bg-slate-900/90 border border-cyan-500/30 px-2.5 sm:px-3 py-1 rounded-xl text-xs ltr font-mono text-cyan-300 font-bold tracking-widest">
             {esc(doc.bl)}
           </span>
           <span
-            className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold border ${currentStageCfg.badgeCls}`}
+            className={`inline-flex items-center gap-1.5 px-2.5 sm:px-3 py-0.5 sm:py-1 rounded-full text-[11px] sm:text-xs font-bold border ${currentStageCfg.badgeCls}`}
           >
-            <span className="w-2 h-2 rounded-full bg-current" />
+            <span className="w-1.5 h-1.5 sm:w-2 sm:h-2 rounded-full bg-current" />
             {currentStageCfg.label}
           </span>
           {batch && (
-            <span className="bg-cyan-500/15 border border-cyan-400/40 text-cyan-300 text-xs font-bold px-3 py-0.5 rounded-full">
+            <span className="hidden md:inline-block bg-cyan-500/15 border border-cyan-400/40 text-cyan-300 text-xs font-bold px-3 py-0.5 rounded-full">
               تجمیع {fa(batch.id)}
             </span>
           )}
         </div>
 
-        {/* Action Buttons */}
-        <div className="flex items-center gap-2 shrink-0 flex-wrap">
+        {/* Action Buttons (always visible on md+, shown inside expanded view on mobile) */}
+        <div className={`${mobileExpanded ? 'flex' : 'hidden'} md:flex items-center gap-2 shrink-0 flex-wrap w-full md:w-auto pt-1 md:pt-0`}>
           {onCreateFollowUpTask && (
             <button
               type="button"
               onClick={() => onCreateFollowUpTask(doc)}
-              className="min-h-[38px] flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-purple-400/40 bg-purple-500/15 hover:bg-purple-500/25 text-purple-200 text-xs font-bold transition-colors active:scale-95 cursor-pointer"
+              className="min-h-[42px] md:min-h-[38px] flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-purple-400/40 bg-purple-500/15 hover:bg-purple-500/25 text-purple-200 text-xs font-bold transition-colors active:scale-95 cursor-pointer"
               title="ثبت کار روزانه برای این کوتاژ"
             >
               <ClipboardList className="w-3.5 h-3.5 text-purple-300" />
-              <span className="sm:hidden">کار</span>
+              <span className="sm:hidden">کار پیگیری</span>
             </button>
           )}
           {stage === 1 && canEdit && onMarkComplete && (
             <button
               type="button"
               onClick={() => onMarkComplete(doc.id)}
-              className="min-h-[38px] flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-emerald-500/40 bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-200 text-xs font-bold transition-colors active:scale-95 cursor-pointer"
+              className="min-h-[42px] md:min-h-[38px] flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-emerald-500/40 bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-200 text-xs font-bold transition-colors active:scale-95 cursor-pointer"
               title="تغییر مستقیم وضعیت سند به کامل"
             >
               <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
-              <span>تغییر وضعیت به کامل</span>
+              <span>تکمیل</span>
             </button>
           )}
           {canEdit && (
             <button
               type="button"
               onClick={() => onEdit(doc)}
-              className="min-h-[38px] flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl border border-cyan-400/40 bg-cyan-500/15 hover:bg-cyan-500/25 text-cyan-200 text-xs font-bold transition-colors active:scale-95 cursor-pointer"
+              className="min-h-[42px] md:min-h-[38px] flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl border border-cyan-400/40 bg-cyan-500/15 hover:bg-cyan-500/25 text-cyan-200 text-xs font-bold transition-colors active:scale-95 cursor-pointer"
               title="ویرایش این سند"
             >
               <Edit2 className="w-3.5 h-3.5 text-cyan-400" />
@@ -159,7 +168,7 @@ export const EntryCard: React.FC<EntryCardProps> = ({
             <button
               type="button"
               onClick={() => onDelete(doc.id)}
-              className="min-h-[38px] flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl border border-rose-500/40 bg-rose-500/15 hover:bg-rose-500/25 text-rose-200 text-xs font-bold transition-colors active:scale-95 cursor-pointer"
+              className="min-h-[42px] md:min-h-[38px] flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl border border-rose-500/40 bg-rose-500/15 hover:bg-rose-500/25 text-rose-200 text-xs font-bold transition-colors active:scale-95 cursor-pointer"
               title="حذف این سند"
             >
               <Trash2 className="w-3.5 h-3.5 text-rose-400" />
@@ -169,8 +178,65 @@ export const EntryCard: React.FC<EntryCardProps> = ({
         </div>
       </div>
 
+      {/* Compact Mobile Summary Line (< md) */}
+      <div className="md:hidden space-y-2.5 relative z-10">
+        <div className="flex items-center gap-1.5 flex-wrap text-[11px] text-slate-300">
+          <span className="font-bold text-slate-100 truncate max-w-[160px]">{esc(doc.importer)}</span>
+          <span className="text-slate-500">·</span>
+          <span className="text-cyan-300 font-semibold truncate max-w-[140px]">{esc(doc.goods) || '—'}</span>
+          {doc.pallets > 0 && (
+            <>
+              <span className="text-slate-500">·</span>
+              <span className="text-purple-300 font-mono font-bold">{fa(doc.pallets)} پالت</span>
+            </>
+          )}
+          <span className="text-slate-500">·</span>
+          <span className="text-amber-300 font-mono">
+            تخلیه {fa(doc.unloaded)}/{fa(doc.trailers)}
+          </span>
+        </div>
+
+        {/* Compact Progress + Expand Toggle */}
+        <div className="flex items-center gap-2">
+          <div className="flex-1 h-2 bg-slate-900/80 rounded-full overflow-hidden border border-white/10">
+            <div
+              className={`h-full rounded-full transition-all duration-300 ${
+                progress === 100
+                  ? 'bg-gradient-to-r from-emerald-500 to-teal-400'
+                  : 'bg-gradient-to-r from-cyan-500 via-blue-500 to-amber-400'
+              }`}
+              style={{ width: `${progress}%` }}
+            />
+          </div>
+          <span className={`font-lalezar text-sm min-w-[34px] text-left ${progress === 100 ? 'text-emerald-300' : 'text-cyan-200'}`}>
+            {fa(progress)}٪
+          </span>
+        </div>
+
+        <button
+          type="button"
+          onClick={() => setMobileExpanded((prev) => !prev)}
+          className="w-full min-h-[44px] px-3 py-2 rounded-xl bg-white/[0.04] hover:bg-white/[0.08] border border-white/12 flex items-center justify-between text-xs font-bold text-slate-200 transition-colors active:scale-[0.99] cursor-pointer"
+        >
+          <span>{mobileExpanded ? 'بستن جزئیات و عملیات' : 'مشاهده جزئیات و عملیات'}</span>
+          <ChevronDown
+            className={`w-4 h-4 text-cyan-400 transition-transform duration-200 ${mobileExpanded ? 'rotate-180' : ''}`}
+          />
+        </button>
+      </div>
+
+      {/* Collapsible Full Details on Mobile (Always Expanded on md+) */}
+      <div className={`${mobileExpanded ? 'block mt-3 pt-3 border-t border-white/10' : 'hidden'} md:block`}>
       {/* Meta Badges */}
-      <div className="flex items-center gap-2.5 sm:gap-3.5 flex-wrap text-xs text-slate-300 mb-3 relative z-10">
+      <div className="flex items-center gap-2 sm:gap-3.5 flex-wrap text-xs text-slate-300 mb-3 relative z-10">
+        <span className="md:hidden bg-slate-900/90 border border-cyan-500/30 px-2.5 py-1 rounded-lg text-[11px] ltr font-mono text-cyan-300 font-bold">
+          {esc(doc.bl)}
+        </span>
+        {batch && (
+          <span className="md:hidden bg-cyan-500/15 border border-cyan-400/40 text-cyan-300 text-[11px] font-bold px-2.5 py-1 rounded-lg">
+            تجمیع {fa(batch.id)}
+          </span>
+        )}
         <span className="flex items-center gap-1.5 bg-white/5 border border-white/10 px-2.5 py-1 rounded-lg">
           <Calendar className="w-3.5 h-3.5 text-cyan-400" />
           <span className="text-slate-400">تخلیه:</span> {fmtJ(doc.unloadDate)}
@@ -202,7 +268,7 @@ export const EntryCard: React.FC<EntryCardProps> = ({
       </div>
 
       {/* Progress Pipe */}
-      <div className="flex items-center py-3.5 my-2.5 border-t border-b border-white/10 relative z-10">
+      <div className="flex items-center py-3.5 my-2.5 border-t border-b border-white/10 relative z-10 overflow-x-auto no-scrollbar">
         {[
           { label: 'تخلیه', stageIdx: 1 },
           { label: 'صورت‌حساب', stageIdx: 2 },
@@ -217,12 +283,12 @@ export const EntryCard: React.FC<EntryCardProps> = ({
             <React.Fragment key={i}>
               {i > 0 && (
                 <div
-                  className={`flex-1 h-0.5 transition-colors duration-300 ${
+                  className={`flex-1 min-w-[16px] h-0.5 transition-colors duration-300 ${
                     isDone ? 'bg-gradient-to-r from-emerald-500 to-teal-400' : 'bg-white/10'
                   }`}
                 />
               )}
-              <div className="flex flex-col items-center gap-1">
+              <div className="flex flex-col items-center gap-1 shrink-0">
                 <div
                   className={`w-7 h-7 sm:w-8 sm:h-8 rounded-full flex items-center justify-center text-xs font-bold border transition-colors duration-200 ${
                     isDone
@@ -235,7 +301,7 @@ export const EntryCard: React.FC<EntryCardProps> = ({
                   {isDone ? <Check className="w-4 h-4 text-emerald-300" /> : fa(i + 1)}
                 </div>
                 <span
-                  className={`text-[10px] sm:text-[11px] font-medium ${
+                  className={`text-[10px] sm:text-[11px] font-medium whitespace-nowrap ${
                     isDone ? 'text-slate-200' : isCur ? 'text-amber-300 font-bold' : 'text-slate-400'
                   }`}
                 >
@@ -384,8 +450,8 @@ export const EntryCard: React.FC<EntryCardProps> = ({
         </div>
       </div>
 
-      {/* Progress Bar Footer */}
-      <div className="mt-4 pt-3 border-t border-white/10 flex items-center gap-3 relative z-10">
+      {/* Progress Bar Footer (Desktop) */}
+      <div className="hidden md:flex mt-4 pt-3 border-t border-white/10 items-center gap-3 relative z-10">
         <div className="flex-1 h-2.5 bg-slate-900/80 rounded-full overflow-hidden border border-white/10 p-0.5">
           <div
             className={`h-full rounded-full transition-all duration-500 ${
@@ -401,6 +467,7 @@ export const EntryCard: React.FC<EntryCardProps> = ({
         }`}>
           {fa(progress)}٪
         </span>
+      </div>
       </div>
     </div>
   );

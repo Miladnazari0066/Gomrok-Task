@@ -15,7 +15,7 @@ interface ToastProps {
 
 export const ToastContainer: React.FC<ToastProps> = ({ toasts, onDismiss }) => {
   return (
-    <div className="fixed bottom-6 left-6 z-50 flex flex-col gap-2 max-w-sm w-full pointer-events-none">
+    <div className="fixed bottom-[calc(4.75rem+env(safe-area-inset-bottom))] md:bottom-6 inset-x-3 sm:inset-x-auto sm:left-6 z-50 flex flex-col gap-2 sm:max-w-sm sm:w-full pointer-events-none">
       <AnimatePresence>
         {toasts.map((t) => (
           <motion.div
@@ -23,7 +23,7 @@ export const ToastContainer: React.FC<ToastProps> = ({ toasts, onDismiss }) => {
             initial={{ opacity: 0, y: 20, scale: 0.95 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: 10, scale: 0.9 }}
-            className={`pointer-events-auto flex items-center gap-3 px-4 py-3 rounded-xl border text-sm shadow-xl glass-panel ${
+            className={`pointer-events-auto flex items-center gap-3 px-4 py-3 rounded-xl border text-xs sm:text-sm shadow-xl glass-panel ${
               t.type === 'ok'
                 ? 'border-emerald-500/50 text-slate-100 border-r-4 border-r-emerald-400'
                 : t.type === 'err'
@@ -36,8 +36,10 @@ export const ToastContainer: React.FC<ToastProps> = ({ toasts, onDismiss }) => {
             {t.type === 'info' && <Info className="w-5 h-5 text-cyan-400 shrink-0" />}
             <span className="flex-1 leading-relaxed font-medium">{t.text}</span>
             <button
+              type="button"
               onClick={() => onDismiss(t.id)}
-              className="text-slate-400 hover:text-slate-100 transition-colors"
+              className="min-w-[36px] min-h-[36px] flex items-center justify-center text-slate-400 hover:text-slate-100 transition-colors cursor-pointer"
+              aria-label="بستن اعلان"
             >
               ×
             </button>

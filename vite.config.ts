@@ -24,7 +24,7 @@ export default defineConfig(() => {
           name: 'مدیریت کارهای گمرک | Customs Task Management',
           short_name: 'کارهای گمرک',
           description: 'سامانه جامع مدیریت ورود و خروج کالا، ترخیص ۹۰/۱۰، ساتا و پیگیری کارهای گمرکی',
-          theme_color: '#081D26',
+          theme_color: '#050a16',
           background_color: '#040711',
           display: 'standalone',
           orientation: 'any',
