@@ -21,6 +21,7 @@ import {
   Eye,
   EyeOff,
   Sliders,
+  Copy,
 } from 'lucide-react';
 import type {
   BusinessOperationMode,
@@ -45,6 +46,7 @@ import {
   claimLegacyCompany,
   completeCompanyOnboarding,
 } from '../services/workspaceApi';
+import { SUPABASE_SQL_SCHEMA } from '../utils/sqlSchema';
 import { getSupabase } from '../lib/supabase';
 import { fa } from '../utils/jalali';
 
@@ -116,6 +118,8 @@ export const CompanyOnboardingWizard: React.FC<CompanyOnboardingWizardProps> = (
   const [step, setStep] = useState<number>(1);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
+  const [errorCode, setErrorCode] = useState('');
+  const [copiedSql, setCopiedSql] = useState(false);
 
   // Step 1: Company Info
   const [companyName, setCompanyName] = useState(initialCompany?.name || '');
@@ -318,6 +322,16 @@ export const CompanyOnboardingWizard: React.FC<CompanyOnboardingWizardProps> = (
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
+  const handleCopySqlFromWizard = async () => {
+    try {
+      await navigator.clipboard.writeText(SUPABASE_SQL_SCHEMA);
+      setCopiedSql(true);
+      setTimeout(() => setCopiedSql(false), 2500);
+    } catch {
+      setError('امکان کپی خودکار نبود. فایل supabase/schema.sql را مستقیماً باز کنید.');
+    }
+  };
+
   const handleFinalConfirm = async () => {
     if (mode === 'restart' && !confirmRestartChecked) {
       setError('لطفاً تیک تایید نهایی اعمال تغییرات را فعال کنید.');
@@ -325,6 +339,7 @@ export const CompanyOnboardingWizard: React.FC<CompanyOnboardingWizardProps> = (
     }
     setSubmitting(true);
     setError('');
+    setErrorCode('');
 
     const payload: OnboardingPayload = {
       company: {
@@ -364,17 +379,21 @@ export const CompanyOnboardingWizard: React.FC<CompanyOnboardingWizardProps> = (
             ? await claimLegacyCompany(payload)
             : await completeCompanyOnboarding(payload);
 
-        // Hydrate browser Supabase Auth session immediately
+        // Ensure browser Supabase Auth session is hydrated
         const supabase = getSupabase();
         if (supabase && res.session?.access_token && res.session?.refresh_token) {
-          await supabase.auth.setSession({
-            access_token: res.session.access_token,
-            refresh_token: res.session.refresh_token,
-          });
+          const { data: current } = await supabase.auth.getSession();
+          if (!current.session) {
+            await supabase.auth.setSession({
+              access_token: res.session.access_token,
+              refresh_token: res.session.refresh_token,
+            });
+          }
         }
         onComplete({ company: res.company, createdUsersCount: res.createdUsersCount });
       }
     } catch (err: any) {
+      setErrorCode(String(err?.code || ''));
       setError(err?.message || 'خطا در تکمیل راه‌اندازی شرکت. لطفاً مجدداً تلاش کنید.');
     } finally {
       setSubmitting(false);
@@ -468,9 +487,26 @@ export const CompanyOnboardingWizard: React.FC<CompanyOnboardingWizardProps> = (
       {/* Main Scrollable Step Content */}
       <main className="flex-1 max-w-4xl w-full mx-auto px-4 py-5 sm:py-7 pb-28">
         {error && (
-          <div className="mb-4 rounded-2xl bg-rose-500/15 border border-rose-500/40 px-4 py-3 text-xs text-rose-200 flex items-start gap-2.5">
-            <AlertCircle className="w-4 h-4 text-rose-400 shrink-0 mt-0.5" />
-            <span className="leading-relaxed">{error}</span>
+          <div className="mb-4 rounded-2xl bg-rose-500/15 border border-rose-500/40 px-4 py-3.5 text-xs text-rose-200 space-y-2.5">
+            <div className="flex items-start gap-2.5">
+              <AlertCircle className="w-4 h-4 text-rose-400 shrink-0 mt-0.5" />
+              <span className="leading-relaxed">{error}</span>
+            </div>
+            {errorCode === 'SCHEMA_NOT_READY' && (
+              <div className="pt-1 flex flex-wrap items-center gap-2 border-t border-rose-400/20">
+                <button
+                  type="button"
+                  onClick={handleCopySqlFromWizard}
+                  className="min-h-[36px] px-3 py-1.5 rounded-xl bg-cyan-500/20 hover:bg-cyan-500/30 border border-cyan-400/40 text-cyan-100 font-bold flex items-center gap-1.5 cursor-pointer"
+                >
+                  {copiedSql ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
+                  <span>{copiedSql ? 'اسکریپت SQL کپی شد — در SQL Editor اجرا کنید' : 'کپی کامل اسکریپت SQL (v5.1)'}</span>
+                </button>
+                <span className="text-[11px] text-slate-300">
+                  پس از اجرا در Supabase SQL Editor، دوباره دکمه «تایید و ایجاد فضای کاری» را بزنید (اطلاعات فرم شما حفظ شده است).
+                </span>
+              </div>
+            )}
           </div>
         )}
 

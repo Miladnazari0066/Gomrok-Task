@@ -1,5 +1,5 @@
 -- ==============================================================================
--- CUSTOMS TASK MANAGEMENT — MULTI-TENANT SAAS MIGRATION & STRICT RLS (v5.0)
+-- CUSTOMS TASK MANAGEMENT — MULTI-TENANT SAAS MIGRATION & STRICT RLS (v5.1)
 -- ==============================================================================
 -- Safe, idempotent, non-destructive PostgreSQL migration for Supabase.
 -- Run this script in the Supabase SQL Editor:
@@ -13,6 +13,8 @@
 --   3. Enforces strict company isolation, disabled-user blocking, operational
 --      module activation (Import / Export), and RBAC at the PostgreSQL RLS layer.
 --   4. Prevents removing, disabling, or demoting the last active Company Owner.
+--   5. Provides direct transactional SECURITY DEFINER RPCs so GitHub Pages, PWA,
+--      and static hosts work natively with Supabase Auth without an Express API.
 -- ==============================================================================
 
 BEGIN;
@@ -941,4 +943,1350 @@ CREATE POLICY "customs_letters_delete_tenant" ON public.customs_letters
     FOR DELETE TO authenticated
     USING (public.has_company_permission(company_id, 'canManageLetters'));
 
+-- ==============================================================================
+-- 7. DIRECT SUPABASE MULTI-TENANT RPCs (STATIC HOST / GITHUB PAGES / PWA READY)
+-- ==============================================================================
+-- All sensitive multi-tenant mutations validate auth.uid(), company membership,
+-- RBAC permissions, and anti-privilege-escalation directly inside PostgreSQL.
+
+CREATE OR REPLACE FUNCTION public.sanitize_company_logo_url(p_url TEXT)
+RETURNS TEXT
+LANGUAGE plpgsql
+IMMUTABLE
+SET search_path = public
+AS $$
+DECLARE
+    v_clean TEXT;
+BEGIN
+    v_clean := trim(COALESCE(p_url, ''));
+    IF v_clean = '' THEN
+        RETURN '';
+    END IF;
+    IF length(v_clean) > 600000 THEN
+        RAISE EXCEPTION 'LOGO_TOO_LARGE';
+    END IF;
+    IF v_clean ~* '^https://' THEN
+        RETURN v_clean;
+    END IF;
+    IF v_clean ~* '^data:image/(png|jpeg|jpg|webp);base64,[A-Za-z0-9+/=]+$' THEN
+        RETURN v_clean;
+    END IF;
+    RAISE EXCEPTION 'INVALID_LOGO_URL';
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION public.generate_unique_company_slug(p_name TEXT)
+RETURNS TEXT
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+    v_base TEXT;
+    v_candidate TEXT;
+    v_tries INTEGER := 0;
+BEGIN
+    v_base := lower(regexp_replace(COALESCE(p_name, ''), '[^a-zA-Z0-9]+', '-', 'g'));
+    v_base := trim(BOTH '-' FROM v_base);
+    IF length(v_base) < 2 THEN
+        v_base := 'company';
+    END IF;
+    v_base := left(v_base, 36);
+
+    LOOP
+        v_candidate := v_base || '-' || substr(md5(gen_random_uuid()::text), 1, 6);
+        EXIT WHEN NOT EXISTS (SELECT 1 FROM public.companies WHERE slug = v_candidate);
+        v_tries := v_tries + 1;
+        IF v_tries > 20 THEN
+            v_candidate := 'company-' || replace(gen_random_uuid()::text, '-', '');
+            EXIT;
+        END IF;
+    END LOOP;
+
+    RETURN v_candidate;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION public.assert_no_privilege_escalation(p_company_id UUID, p_target_perms JSONB)
+RETURNS BOOLEAN
+LANGUAGE plpgsql
+STABLE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+    v_key TEXT;
+    v_val TEXT;
+BEGIN
+    IF public.is_company_owner(p_company_id) THEN
+        RETURN true;
+    END IF;
+
+    IF p_target_perms IS NULL OR jsonb_typeof(p_target_perms) <> 'object' THEN
+        RETURN true;
+    END IF;
+
+    FOR v_key, v_val IN SELECT * FROM jsonb_each_text(p_target_perms)
+    LOOP
+        IF v_val = 'true' AND NOT public.has_company_permission(p_company_id, v_key) THEN
+            RAISE EXCEPTION 'PRIVILEGE_ESCALATION_DENIED:%', v_key;
+        END IF;
+    END LOOP;
+
+    RETURN true;
+END;
+$$;
+
+-- Public status check: verifies SQL v5.1 schema is installed and checks if legacy data awaits claiming
+CREATE OR REPLACE FUNCTION public.get_onboarding_status()
+RETURNS JSONB
+LANGUAGE plpgsql
+STABLE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+    legacy_company_id CONSTANT UUID := '00000000-0000-4000-8000-000000000001';
+    v_legacy_name TEXT;
+    v_member_count INTEGER := 0;
+BEGIN
+    SELECT c.name
+    INTO v_legacy_name
+    FROM public.companies c
+    WHERE c.id = legacy_company_id
+      AND c.onboarding_completed = false
+    LIMIT 1;
+
+    IF FOUND THEN
+        SELECT COUNT(*) INTO v_member_count
+        FROM public.company_members m
+        WHERE m.company_id = legacy_company_id;
+
+        IF v_member_count = 0 THEN
+            RETURN jsonb_build_object(
+                'schemaReady', true,
+                'schemaVersion', '5.1',
+                'hasUnclaimedLegacyCompany', true,
+                'legacyCompanyName', COALESCE(v_legacy_name, 'شرکت اولیه')
+            );
+        END IF;
+    END IF;
+
+    RETURN jsonb_build_object(
+        'schemaReady', true,
+        'schemaVersion', '5.1',
+        'hasUnclaimedLegacyCompany', false,
+        'legacyCompanyName', ''
+    );
+END;
+$$;
+
+-- Safe username -> email resolver for active members during login
+CREATE OR REPLACE FUNCTION public.resolve_login_email(p_username TEXT)
+RETURNS TEXT
+LANGUAGE plpgsql
+STABLE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+    v_clean TEXT;
+    v_email TEXT;
+BEGIN
+    v_clean := lower(trim(COALESCE(p_username, '')));
+    IF v_clean = '' THEN
+        RETURN NULL;
+    END IF;
+
+    SELECT m.email
+    INTO v_email
+    FROM public.company_members m
+    WHERE lower(trim(m.username)) = v_clean
+      AND m.status = 'active'
+    ORDER BY m.created_at ASC
+    LIMIT 1;
+
+    RETURN v_email;
+END;
+$$;
+
+-- Seed or upsert onboarding roles for a company (internal helper)
+CREATE OR REPLACE FUNCTION public.seed_company_roles_internal(
+    p_company_id UUID,
+    p_roles JSONB
+)
+RETURNS UUID
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+    v_full_perms CONSTANT JSONB := jsonb_build_object(
+        'canViewEntry', true, 'canCreateEntry', true, 'canEditEntry', true, 'canCreateBatch', true,
+        'canViewExit', true, 'canCreateExit', true, 'canUpdateExitStages', true,
+        'canViewLab', true, 'canCreateLab', true, 'canViewReports', true, 'canViewSummaryModal', true,
+        'canAccessCloudDb', true, 'canDeleteItems', true, 'canViewLetters', true, 'canManageLetters', true,
+        'canConfirmSata', true, 'canCloseCase', true, 'canEditCriticalClearance', true,
+        'canModifyCompletedExits', true, 'canManageTasks', true, 'canManageNotifications', true,
+        'canManageUsers', true, 'canManageRoles', true, 'canManageCompanySettings', true,
+        'canManageSystemConfig', true
+    );
+    v_role JSONB;
+    v_key TEXT;
+    v_name TEXT;
+    v_desc TEXT;
+    v_is_system BOOLEAN;
+    v_is_owner_role BOOLEAN;
+    v_perms JSONB;
+    v_owner_role_id UUID;
+BEGIN
+    -- Always ensure the built-in owner role exists with full permissions
+    INSERT INTO public.company_roles (
+        company_id, key, name, description, is_system, is_owner_role, permissions
+    )
+    VALUES (
+        p_company_id,
+        'owner',
+        'مالک شرکت (مدیر کل)',
+        'دسترسی کامل به تمامی بخش‌ها، تنظیمات شرکت، کاربران، نقش‌ها و اجرای مجدد راه‌اندازی',
+        true,
+        true,
+        v_full_perms
+    )
+    ON CONFLICT (company_id, key) DO UPDATE
+    SET is_system = true,
+        is_owner_role = true,
+        permissions = v_full_perms,
+        updated_at = now()
+    RETURNING id INTO v_owner_role_id;
+
+    IF p_roles IS NOT NULL AND jsonb_typeof(p_roles) = 'array' THEN
+        FOR v_role IN SELECT * FROM jsonb_array_elements(p_roles)
+        LOOP
+            v_key := lower(trim(COALESCE(v_role ->> 'key', '')));
+            v_name := trim(COALESCE(v_role ->> 'name', ''));
+            IF v_key = '' OR v_key = 'owner' OR length(v_name) < 2 THEN
+                CONTINUE;
+            END IF;
+
+            v_desc := trim(COALESCE(v_role ->> 'description', ''));
+            v_is_system := COALESCE((v_role ->> 'isSystem')::boolean, false);
+            v_is_owner_role := false; -- Never allow creating secondary owner roles via draft payload
+            v_perms := CASE
+                WHEN jsonb_typeof(v_role -> 'permissions') = 'object' THEN v_role -> 'permissions'
+                ELSE '{}'::jsonb
+            END;
+
+            INSERT INTO public.company_roles (
+                company_id, key, name, description, is_system, is_owner_role, permissions
+            )
+            VALUES (
+                p_company_id, v_key, v_name, v_desc, v_is_system, v_is_owner_role, v_perms
+            )
+            ON CONFLICT (company_id, key) DO UPDATE
+            SET name = EXCLUDED.name,
+                description = EXCLUDED.description,
+                permissions = EXCLUDED.permissions,
+                updated_at = now()
+            WHERE public.company_roles.is_owner_role = false;
+        END LOOP;
+    END IF;
+
+    RETURN v_owner_role_id;
+END;
+$$;
+
+-- Complete new company onboarding atomically for the currently authenticated Supabase user
+CREATE OR REPLACE FUNCTION public.complete_company_onboarding_rpc(
+    p_company JSONB,
+    p_operations JSONB,
+    p_owner JSONB,
+    p_roles JSONB
+)
+RETURNS JSONB
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+    v_uid UUID := auth.uid();
+    v_auth_email TEXT;
+    v_company_name TEXT;
+    v_logo_url TEXT;
+    v_enable_import BOOLEAN;
+    v_enable_export BOOLEAN;
+    v_owner_name TEXT;
+    v_owner_username TEXT;
+    v_slug TEXT;
+    v_company public.companies%ROWTYPE;
+    v_owner_role_id UUID;
+    v_member public.company_members%ROWTYPE;
+    v_roles_json JSONB;
+BEGIN
+    IF v_uid IS NULL THEN
+        RAISE EXCEPTION 'AUTH_REQUIRED';
+    END IF;
+
+    SELECT lower(email) INTO v_auth_email
+    FROM auth.users
+    WHERE id = v_uid;
+
+    IF v_auth_email IS NULL THEN
+        RAISE EXCEPTION 'AUTH_USER_NOT_FOUND';
+    END IF;
+
+    v_company_name := trim(COALESCE(p_company ->> 'name', ''));
+    IF length(v_company_name) < 2 THEN
+        RAISE EXCEPTION 'INVALID_COMPANY_NAME';
+    END IF;
+
+    v_enable_import := COALESCE((p_operations ->> 'enableImport')::boolean, false);
+    v_enable_export := COALESCE((p_operations ->> 'enableExport')::boolean, false);
+    IF NOT (v_enable_import OR v_enable_export) THEN
+        RAISE EXCEPTION 'AT_LEAST_ONE_OPERATION_REQUIRED';
+    END IF;
+
+    v_logo_url := public.sanitize_company_logo_url(p_company ->> 'logoUrl');
+    v_owner_name := trim(COALESCE(p_owner ->> 'fullName', ''));
+    IF length(v_owner_name) < 2 THEN
+        v_owner_name := split_part(v_auth_email, '@', 1);
+    END IF;
+    v_owner_username := lower(trim(COALESCE(p_owner ->> 'username', '')));
+
+    v_slug := public.generate_unique_company_slug(v_company_name);
+
+    INSERT INTO public.companies (
+        name, slug, logo_url, registration_number, national_id, phone, email, address,
+        settings, enable_import, enable_export, onboarding_completed, onboarding_completed_at
+    )
+    VALUES (
+        v_company_name,
+        v_slug,
+        v_logo_url,
+        trim(COALESCE(p_company ->> 'registrationNumber', '')),
+        trim(COALESCE(p_company ->> 'nationalId', '')),
+        trim(COALESCE(p_company ->> 'phone', '')),
+        trim(COALESCE(p_company ->> 'email', '')),
+        trim(COALESCE(p_company ->> 'address', '')),
+        CASE WHEN jsonb_typeof(p_company -> 'settings') = 'object' THEN p_company -> 'settings' ELSE '{}'::jsonb END,
+        v_enable_import,
+        v_enable_export,
+        true,
+        now()
+    )
+    RETURNING * INTO v_company;
+
+    v_owner_role_id := public.seed_company_roles_internal(v_company.id, p_roles);
+
+    INSERT INTO public.company_members (
+        company_id, user_id, full_name, email, username, role_id,
+        permission_overrides, status, is_owner
+    )
+    VALUES (
+        v_company.id,
+        v_uid,
+        v_owner_name,
+        v_auth_email,
+        v_owner_username,
+        v_owner_role_id,
+        '{}'::jsonb,
+        'active',
+        true
+    )
+    RETURNING * INTO v_member;
+
+    INSERT INTO public.lookup_options (id, company_id, importers, carriers, goods_list, brands)
+    VALUES ('default_' || v_company.id::text, v_company.id, '[]'::jsonb, '[]'::jsonb, '[]'::jsonb, '[]'::jsonb)
+    ON CONFLICT (company_id) DO NOTHING;
+
+    INSERT INTO public.company_audit_logs (company_id, actor_user_id, action, details)
+    VALUES (
+        v_company.id,
+        v_uid,
+        'company_onboarded',
+        jsonb_build_object(
+            'companyName', v_company.name,
+            'enableImport', v_company.enable_import,
+            'enableExport', v_company.enable_export
+        )
+    );
+
+    SELECT COALESCE(jsonb_agg(row_to_json(r) ORDER BY r.is_owner_role DESC, r.is_system DESC, r.created_at ASC), '[]'::jsonb)
+    INTO v_roles_json
+    FROM public.company_roles r
+    WHERE r.company_id = v_company.id;
+
+    RETURN jsonb_build_object(
+        'company', row_to_json(v_company),
+        'member', row_to_json(v_member),
+        'roles', v_roles_json
+    );
+END;
+$$;
+
+-- Claim unclaimed legacy company atomically without deleting any historical data
+CREATE OR REPLACE FUNCTION public.claim_legacy_company_rpc(
+    p_company JSONB,
+    p_operations JSONB,
+    p_owner JSONB,
+    p_roles JSONB
+)
+RETURNS JSONB
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+    legacy_company_id CONSTANT UUID := '00000000-0000-4000-8000-000000000001';
+    v_uid UUID := auth.uid();
+    v_auth_email TEXT;
+    v_company public.companies%ROWTYPE;
+    v_member_count INTEGER := 0;
+    v_company_name TEXT;
+    v_logo_url TEXT;
+    v_enable_import BOOLEAN;
+    v_enable_export BOOLEAN;
+    v_owner_name TEXT;
+    v_owner_username TEXT;
+    v_owner_role_id UUID;
+    v_member public.company_members%ROWTYPE;
+    v_roles_json JSONB;
+BEGIN
+    IF v_uid IS NULL THEN
+        RAISE EXCEPTION 'AUTH_REQUIRED';
+    END IF;
+
+    SELECT lower(email) INTO v_auth_email
+    FROM auth.users
+    WHERE id = v_uid;
+
+    IF v_auth_email IS NULL THEN
+        RAISE EXCEPTION 'AUTH_USER_NOT_FOUND';
+    END IF;
+
+    -- Lock the legacy company row to prevent concurrent claiming
+    SELECT * INTO v_company
+    FROM public.companies
+    WHERE id = legacy_company_id
+    FOR UPDATE;
+
+    IF NOT FOUND OR v_company.onboarding_completed = true THEN
+        RAISE EXCEPTION 'LEGACY_COMPANY_ALREADY_CLAIMED';
+    END IF;
+
+    SELECT COUNT(*) INTO v_member_count
+    FROM public.company_members
+    WHERE company_id = legacy_company_id;
+
+    IF v_member_count > 0 THEN
+        RAISE EXCEPTION 'LEGACY_COMPANY_ALREADY_CLAIMED';
+    END IF;
+
+    v_company_name := trim(COALESCE(p_company ->> 'name', ''));
+    IF length(v_company_name) < 2 THEN
+        RAISE EXCEPTION 'INVALID_COMPANY_NAME';
+    END IF;
+
+    v_enable_import := COALESCE((p_operations ->> 'enableImport')::boolean, false);
+    v_enable_export := COALESCE((p_operations ->> 'enableExport')::boolean, false);
+    IF NOT (v_enable_import OR v_enable_export) THEN
+        RAISE EXCEPTION 'AT_LEAST_ONE_OPERATION_REQUIRED';
+    END IF;
+
+    v_logo_url := public.sanitize_company_logo_url(p_company ->> 'logoUrl');
+    v_owner_name := trim(COALESCE(p_owner ->> 'fullName', ''));
+    IF length(v_owner_name) < 2 THEN
+        v_owner_name := split_part(v_auth_email, '@', 1);
+    END IF;
+    v_owner_username := lower(trim(COALESCE(p_owner ->> 'username', '')));
+
+    UPDATE public.companies
+    SET name = v_company_name,
+        logo_url = v_logo_url,
+        registration_number = trim(COALESCE(p_company ->> 'registrationNumber', '')),
+        national_id = trim(COALESCE(p_company ->> 'nationalId', '')),
+        phone = trim(COALESCE(p_company ->> 'phone', '')),
+        email = trim(COALESCE(p_company ->> 'email', '')),
+        address = trim(COALESCE(p_company ->> 'address', '')),
+        settings = CASE WHEN jsonb_typeof(p_company -> 'settings') = 'object' THEN p_company -> 'settings' ELSE settings END,
+        enable_import = v_enable_import,
+        enable_export = v_enable_export,
+        onboarding_completed = true,
+        onboarding_completed_at = now(),
+        updated_at = now()
+    WHERE id = legacy_company_id
+    RETURNING * INTO v_company;
+
+    v_owner_role_id := public.seed_company_roles_internal(v_company.id, p_roles);
+
+    INSERT INTO public.company_members (
+        company_id, user_id, full_name, email, username, role_id,
+        permission_overrides, status, is_owner
+    )
+    VALUES (
+        v_company.id,
+        v_uid,
+        v_owner_name,
+        v_auth_email,
+        v_owner_username,
+        v_owner_role_id,
+        '{}'::jsonb,
+        'active',
+        true
+    )
+    RETURNING * INTO v_member;
+
+    INSERT INTO public.company_audit_logs (company_id, actor_user_id, action, details)
+    VALUES (
+        v_company.id,
+        v_uid,
+        'legacy_company_claimed',
+        jsonb_build_object(
+            'companyName', v_company.name,
+            'enableImport', v_company.enable_import,
+            'enableExport', v_company.enable_export
+        )
+    );
+
+    SELECT COALESCE(jsonb_agg(row_to_json(r) ORDER BY r.is_owner_role DESC, r.is_system DESC, r.created_at ASC), '[]'::jsonb)
+    INTO v_roles_json
+    FROM public.company_roles r
+    WHERE r.company_id = v_company.id;
+
+    RETURN jsonb_build_object(
+        'company', row_to_json(v_company),
+        'member', row_to_json(v_member),
+        'roles', v_roles_json
+    );
+END;
+$$;
+
+-- Resolve authenticated user's active company context, roles, and memberships
+CREATE OR REPLACE FUNCTION public.get_workspace_context_rpc(p_company_id UUID DEFAULT NULL)
+RETURNS JSONB
+LANGUAGE plpgsql
+STABLE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+    v_uid UUID := auth.uid();
+    v_total_memberships INTEGER := 0;
+    v_active_company_id UUID;
+    v_company public.companies%ROWTYPE;
+    v_member public.company_members%ROWTYPE;
+    v_role public.company_roles%ROWTYPE;
+    v_roles_json JSONB;
+    v_members_json JSONB := '[]'::jsonb;
+    v_all_memberships_json JSONB;
+BEGIN
+    IF v_uid IS NULL THEN
+        RAISE EXCEPTION 'AUTH_REQUIRED';
+    END IF;
+
+    SELECT COUNT(*) INTO v_total_memberships
+    FROM public.company_members
+    WHERE user_id = v_uid;
+
+    IF v_total_memberships = 0 THEN
+        RAISE EXCEPTION 'NO_COMPANY_MEMBERSHIP';
+    END IF;
+
+    -- Choose requested company ONLY if user is an active member of it
+    IF p_company_id IS NOT NULL THEN
+        SELECT m.company_id INTO v_active_company_id
+        FROM public.company_members m
+        WHERE m.user_id = v_uid
+          AND m.company_id = p_company_id
+          AND m.status = 'active'
+        LIMIT 1;
+    END IF;
+
+    IF v_active_company_id IS NULL THEN
+        SELECT m.company_id INTO v_active_company_id
+        FROM public.company_members m
+        WHERE m.user_id = v_uid
+          AND m.status = 'active'
+        ORDER BY m.is_owner DESC, m.created_at ASC
+        LIMIT 1;
+    END IF;
+
+    IF v_active_company_id IS NULL THEN
+        RAISE EXCEPTION 'ACCOUNT_DISABLED';
+    END IF;
+
+    SELECT * INTO v_company FROM public.companies WHERE id = v_active_company_id;
+    SELECT * INTO v_member FROM public.company_members WHERE company_id = v_active_company_id AND user_id = v_uid LIMIT 1;
+    SELECT * INTO v_role FROM public.company_roles WHERE id = v_member.role_id;
+
+    SELECT COALESCE(jsonb_agg(row_to_json(r) ORDER BY r.is_owner_role DESC, r.is_system DESC, r.created_at ASC), '[]'::jsonb)
+    INTO v_roles_json
+    FROM public.company_roles r
+    WHERE r.company_id = v_active_company_id;
+
+    IF v_member.is_owner OR public.has_company_permission(v_active_company_id, 'canManageUsers') THEN
+        SELECT COALESCE(
+            jsonb_agg(
+                jsonb_build_object(
+                    'id', m.id,
+                    'company_id', m.company_id,
+                    'user_id', m.user_id,
+                    'full_name', m.full_name,
+                    'email', m.email,
+                    'username', m.username,
+                    'role_id', m.role_id,
+                    'role_key', r.key,
+                    'role_name', r.name,
+                    'permission_overrides', m.permission_overrides,
+                    'status', m.status,
+                    'is_owner', m.is_owner,
+                    'created_at', m.created_at
+                )
+                ORDER BY m.is_owner DESC, m.created_at ASC
+            ),
+            '[]'::jsonb
+        )
+        INTO v_members_json
+        FROM public.company_members m
+        JOIN public.company_roles r ON r.id = m.role_id
+        WHERE m.company_id = v_active_company_id;
+    END IF;
+
+    SELECT COALESCE(
+        jsonb_agg(
+            jsonb_build_object(
+                'companyId', c.id,
+                'companyName', c.name,
+                'companySlug', c.slug,
+                'logoUrl', c.logo_url,
+                'roleName', r.name,
+                'isOwner', m.is_owner,
+                'status', m.status,
+                'onboardingCompleted', c.onboarding_completed
+            )
+            ORDER BY m.is_owner DESC, m.created_at ASC
+        ),
+        '[]'::jsonb
+    )
+    INTO v_all_memberships_json
+    FROM public.company_members m
+    JOIN public.companies c ON c.id = m.company_id
+    JOIN public.company_roles r ON r.id = m.role_id
+    WHERE m.user_id = v_uid
+      AND m.status = 'active';
+
+    RETURN jsonb_build_object(
+        'company', row_to_json(v_company),
+        'member', jsonb_build_object(
+            'id', v_member.id,
+            'company_id', v_member.company_id,
+            'user_id', v_member.user_id,
+            'full_name', v_member.full_name,
+            'email', v_member.email,
+            'username', v_member.username,
+            'role_id', v_member.role_id,
+            'role_key', v_role.key,
+            'role_name', v_role.name,
+            'permission_overrides', v_member.permission_overrides,
+            'status', v_member.status,
+            'is_owner', v_member.is_owner,
+            'created_at', v_member.created_at
+        ),
+        'role', row_to_json(v_role),
+        'roles', v_roles_json,
+        'members', v_members_json,
+        'allMemberships', v_all_memberships_json
+    );
+END;
+$$;
+
+-- Update company profile safely with audit trail
+CREATE OR REPLACE FUNCTION public.update_company_profile_rpc(
+    p_company_id UUID,
+    p_patch JSONB
+)
+RETURNS JSONB
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+    v_name TEXT;
+    v_logo TEXT;
+    v_company public.companies%ROWTYPE;
+BEGIN
+    IF NOT public.has_company_permission(p_company_id, 'canManageCompanySettings') THEN
+        RAISE EXCEPTION 'FORBIDDEN';
+    END IF;
+
+    v_name := trim(COALESCE(p_patch ->> 'name', ''));
+    IF length(v_name) < 2 THEN
+        RAISE EXCEPTION 'INVALID_COMPANY_NAME';
+    END IF;
+
+    v_logo := public.sanitize_company_logo_url(p_patch ->> 'logoUrl');
+
+    UPDATE public.companies
+    SET name = v_name,
+        logo_url = v_logo,
+        registration_number = trim(COALESCE(p_patch ->> 'registrationNumber', '')),
+        national_id = trim(COALESCE(p_patch ->> 'nationalId', '')),
+        phone = trim(COALESCE(p_patch ->> 'phone', '')),
+        email = trim(COALESCE(p_patch ->> 'email', '')),
+        address = trim(COALESCE(p_patch ->> 'address', '')),
+        updated_at = now()
+    WHERE id = p_company_id
+    RETURNING * INTO v_company;
+
+    INSERT INTO public.company_audit_logs (company_id, actor_user_id, action, details)
+    VALUES (
+        p_company_id,
+        auth.uid(),
+        'company_profile_updated',
+        jsonb_build_object('name', v_company.name)
+    );
+
+    RETURN row_to_json(v_company)::jsonb;
+END;
+$$;
+
+-- Update company operations (Import / Export toggles) without deleting historical data
+CREATE OR REPLACE FUNCTION public.update_company_operations_rpc(
+    p_company_id UUID,
+    p_enable_import BOOLEAN,
+    p_enable_export BOOLEAN
+)
+RETURNS JSONB
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+    v_company public.companies%ROWTYPE;
+BEGIN
+    IF NOT public.has_company_permission(p_company_id, 'canManageCompanySettings') THEN
+        RAISE EXCEPTION 'FORBIDDEN';
+    END IF;
+
+    IF NOT (COALESCE(p_enable_import, false) OR COALESCE(p_enable_export, false)) THEN
+        RAISE EXCEPTION 'AT_LEAST_ONE_OPERATION_REQUIRED';
+    END IF;
+
+    UPDATE public.companies
+    SET enable_import = p_enable_import,
+        enable_export = p_enable_export,
+        updated_at = now()
+    WHERE id = p_company_id
+    RETURNING * INTO v_company;
+
+    INSERT INTO public.company_audit_logs (company_id, actor_user_id, action, details)
+    VALUES (
+        p_company_id,
+        auth.uid(),
+        'company_operations_updated',
+        jsonb_build_object('enableImport', p_enable_import, 'enableExport', p_enable_export)
+    );
+
+    RETURN row_to_json(v_company)::jsonb;
+END;
+$$;
+
+-- Owner-only restart onboarding apply (non-destructive)
+CREATE OR REPLACE FUNCTION public.apply_restart_onboarding_rpc(
+    p_company_id UUID,
+    p_company JSONB,
+    p_operations JSONB,
+    p_roles JSONB
+)
+RETURNS JSONB
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+    v_name TEXT;
+    v_logo TEXT;
+    v_enable_import BOOLEAN;
+    v_enable_export BOOLEAN;
+    v_company public.companies%ROWTYPE;
+    v_roles_json JSONB;
+BEGIN
+    IF NOT public.is_company_owner(p_company_id) THEN
+        RAISE EXCEPTION 'OWNER_ONLY';
+    END IF;
+
+    v_name := trim(COALESCE(p_company ->> 'name', ''));
+    IF length(v_name) < 2 THEN
+        RAISE EXCEPTION 'INVALID_COMPANY_NAME';
+    END IF;
+
+    v_enable_import := COALESCE((p_operations ->> 'enableImport')::boolean, false);
+    v_enable_export := COALESCE((p_operations ->> 'enableExport')::boolean, false);
+    IF NOT (v_enable_import OR v_enable_export) THEN
+        RAISE EXCEPTION 'AT_LEAST_ONE_OPERATION_REQUIRED';
+    END IF;
+
+    v_logo := public.sanitize_company_logo_url(p_company ->> 'logoUrl');
+
+    UPDATE public.companies
+    SET name = v_name,
+        logo_url = v_logo,
+        registration_number = trim(COALESCE(p_company ->> 'registrationNumber', '')),
+        national_id = trim(COALESCE(p_company ->> 'nationalId', '')),
+        phone = trim(COALESCE(p_company ->> 'phone', '')),
+        email = trim(COALESCE(p_company ->> 'email', '')),
+        address = trim(COALESCE(p_company ->> 'address', '')),
+        enable_import = v_enable_import,
+        enable_export = v_enable_export,
+        onboarding_completed = true,
+        onboarding_completed_at = COALESCE(onboarding_completed_at, now()),
+        updated_at = now()
+    WHERE id = p_company_id
+    RETURNING * INTO v_company;
+
+    PERFORM public.seed_company_roles_internal(p_company_id, p_roles);
+
+    INSERT INTO public.company_audit_logs (company_id, actor_user_id, action, details)
+    VALUES (
+        p_company_id,
+        auth.uid(),
+        'onboarding_restarted',
+        jsonb_build_object(
+            'name', v_company.name,
+            'enableImport', v_company.enable_import,
+            'enableExport', v_company.enable_export
+        )
+    );
+
+    SELECT COALESCE(jsonb_agg(row_to_json(r) ORDER BY r.is_owner_role DESC, r.is_system DESC, r.created_at ASC), '[]'::jsonb)
+    INTO v_roles_json
+    FROM public.company_roles r
+    WHERE r.company_id = p_company_id;
+
+    RETURN jsonb_build_object(
+        'company', row_to_json(v_company),
+        'roles', v_roles_json
+    );
+END;
+$$;
+
+-- Add an authenticated Supabase Auth user into a company as a member
+CREATE OR REPLACE FUNCTION public.add_company_member_rpc(
+    p_company_id UUID,
+    p_email TEXT,
+    p_full_name TEXT,
+    p_username TEXT,
+    p_role_id UUID,
+    p_status TEXT DEFAULT 'active',
+    p_permission_overrides JSONB DEFAULT '{}'::jsonb,
+    p_expected_user_id UUID DEFAULT NULL
+)
+RETURNS JSONB
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+    v_clean_email TEXT := lower(trim(COALESCE(p_email, '')));
+    v_clean_name TEXT := trim(COALESCE(p_full_name, ''));
+    v_clean_username TEXT := lower(trim(COALESCE(p_username, '')));
+    v_clean_status TEXT := CASE WHEN p_status = 'disabled' THEN 'disabled' ELSE 'active' END;
+    v_target_user_id UUID;
+    v_role public.company_roles%ROWTYPE;
+    v_actor_is_owner BOOLEAN;
+    v_member public.company_members%ROWTYPE;
+BEGIN
+    IF NOT public.has_company_permission(p_company_id, 'canManageUsers') THEN
+        RAISE EXCEPTION 'FORBIDDEN';
+    END IF;
+
+    IF v_clean_email = '' OR length(v_clean_name) < 2 THEN
+        RAISE EXCEPTION 'INVALID_MEMBER_INPUT';
+    END IF;
+
+    SELECT * INTO v_role
+    FROM public.company_roles
+    WHERE id = p_role_id AND company_id = p_company_id;
+
+    IF NOT FOUND THEN
+        RAISE EXCEPTION 'ROLE_NOT_FOUND';
+    END IF;
+
+    v_actor_is_owner := public.is_company_owner(p_company_id);
+
+    IF v_role.is_owner_role AND NOT v_actor_is_owner THEN
+        RAISE EXCEPTION 'ONLY_OWNER_CAN_ASSIGN_OWNER_ROLE';
+    END IF;
+
+    PERFORM public.assert_no_privilege_escalation(p_company_id, v_role.permissions);
+    PERFORM public.assert_no_privilege_escalation(p_company_id, p_permission_overrides);
+
+    SELECT id INTO v_target_user_id
+    FROM auth.users
+    WHERE lower(email) = v_clean_email
+    LIMIT 1;
+
+    IF v_target_user_id IS NULL THEN
+        RAISE EXCEPTION 'AUTH_USER_NOT_FOUND';
+    END IF;
+
+    IF p_expected_user_id IS NOT NULL AND v_target_user_id <> p_expected_user_id THEN
+        RAISE EXCEPTION 'AUTH_USER_MISMATCH';
+    END IF;
+
+    IF EXISTS (
+        SELECT 1 FROM public.company_members
+        WHERE company_id = p_company_id AND user_id = v_target_user_id
+    ) THEN
+        RAISE EXCEPTION 'MEMBER_ALREADY_EXISTS';
+    END IF;
+
+    INSERT INTO public.company_members (
+        company_id, user_id, full_name, email, username, role_id,
+        permission_overrides, status, is_owner
+    )
+    VALUES (
+        p_company_id,
+        v_target_user_id,
+        v_clean_name,
+        v_clean_email,
+        v_clean_username,
+        v_role.id,
+        COALESCE(p_permission_overrides, '{}'::jsonb),
+        v_clean_status,
+        (v_role.is_owner_role AND v_actor_is_owner)
+    )
+    RETURNING * INTO v_member;
+
+    INSERT INTO public.company_audit_logs (company_id, actor_user_id, action, details)
+    VALUES (
+        p_company_id,
+        auth.uid(),
+        'member_added',
+        jsonb_build_object('email', v_clean_email, 'roleName', v_role.name, 'status', v_clean_status)
+    );
+
+    RETURN jsonb_build_object(
+        'id', v_member.id,
+        'company_id', v_member.company_id,
+        'user_id', v_member.user_id,
+        'full_name', v_member.full_name,
+        'email', v_member.email,
+        'username', v_member.username,
+        'role_id', v_member.role_id,
+        'role_key', v_role.key,
+        'role_name', v_role.name,
+        'permission_overrides', v_member.permission_overrides,
+        'status', v_member.status,
+        'is_owner', v_member.is_owner,
+        'created_at', v_member.created_at
+    );
+END;
+$$;
+
+-- Update an existing company member
+CREATE OR REPLACE FUNCTION public.update_company_member_rpc(
+    p_company_id UUID,
+    p_member_id UUID,
+    p_patch JSONB
+)
+RETURNS JSONB
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+    v_existing public.company_members%ROWTYPE;
+    v_role public.company_roles%ROWTYPE;
+    v_actor_is_owner BOOLEAN;
+    v_new_role_id UUID;
+    v_new_overrides JSONB;
+    v_updated public.company_members%ROWTYPE;
+BEGIN
+    IF NOT public.has_company_permission(p_company_id, 'canManageUsers') THEN
+        RAISE EXCEPTION 'FORBIDDEN';
+    END IF;
+
+    SELECT * INTO v_existing
+    FROM public.company_members
+    WHERE id = p_member_id AND company_id = p_company_id;
+
+    IF NOT FOUND THEN
+        RAISE EXCEPTION 'MEMBER_NOT_FOUND';
+    END IF;
+
+    v_actor_is_owner := public.is_company_owner(p_company_id);
+
+    IF v_existing.is_owner AND NOT v_actor_is_owner THEN
+        RAISE EXCEPTION 'CANNOT_EDIT_OWNER';
+    END IF;
+
+    v_new_role_id := COALESCE((p_patch ->> 'roleId')::uuid, v_existing.role_id);
+    SELECT * INTO v_role
+    FROM public.company_roles
+    WHERE id = v_new_role_id AND company_id = p_company_id;
+
+    IF NOT FOUND THEN
+        RAISE EXCEPTION 'ROLE_NOT_FOUND';
+    END IF;
+
+    IF v_role.is_owner_role AND NOT v_actor_is_owner THEN
+        RAISE EXCEPTION 'ONLY_OWNER_CAN_ASSIGN_OWNER_ROLE';
+    END IF;
+
+    v_new_overrides := CASE
+        WHEN p_patch ? 'permissionOverrides' AND jsonb_typeof(p_patch -> 'permissionOverrides') = 'object'
+        THEN p_patch -> 'permissionOverrides'
+        ELSE v_existing.permission_overrides
+    END;
+
+    PERFORM public.assert_no_privilege_escalation(p_company_id, v_role.permissions);
+    PERFORM public.assert_no_privilege_escalation(p_company_id, v_new_overrides);
+
+    UPDATE public.company_members
+    SET full_name = COALESCE(NULLIF(trim(p_patch ->> 'fullName'), ''), full_name),
+        username = CASE WHEN p_patch ? 'username' THEN lower(trim(COALESCE(p_patch ->> 'username', ''))) ELSE username END,
+        role_id = v_role.id,
+        is_owner = CASE WHEN v_actor_is_owner THEN v_role.is_owner_role ELSE is_owner END,
+        permission_overrides = v_new_overrides,
+        updated_at = now()
+    WHERE id = p_member_id AND company_id = p_company_id
+    RETURNING * INTO v_updated;
+
+    INSERT INTO public.company_audit_logs (company_id, actor_user_id, action, details)
+    VALUES (
+        p_company_id,
+        auth.uid(),
+        'member_updated',
+        jsonb_build_object('memberId', p_member_id, 'roleName', v_role.name)
+    );
+
+    RETURN jsonb_build_object(
+        'id', v_updated.id,
+        'company_id', v_updated.company_id,
+        'user_id', v_updated.user_id,
+        'full_name', v_updated.full_name,
+        'email', v_updated.email,
+        'username', v_updated.username,
+        'role_id', v_updated.role_id,
+        'role_key', v_role.key,
+        'role_name', v_role.name,
+        'permission_overrides', v_updated.permission_overrides,
+        'status', v_updated.status,
+        'is_owner', v_updated.is_owner,
+        'created_at', v_updated.created_at
+    );
+END;
+$$;
+
+-- Activate / disable a company member
+CREATE OR REPLACE FUNCTION public.set_company_member_status_rpc(
+    p_company_id UUID,
+    p_member_id UUID,
+    p_status TEXT
+)
+RETURNS JSONB
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+    v_existing public.company_members%ROWTYPE;
+    v_role public.company_roles%ROWTYPE;
+    v_updated public.company_members%ROWTYPE;
+    v_clean_status TEXT := CASE WHEN p_status = 'disabled' THEN 'disabled' ELSE 'active' END;
+BEGIN
+    IF NOT public.has_company_permission(p_company_id, 'canManageUsers') THEN
+        RAISE EXCEPTION 'FORBIDDEN';
+    END IF;
+
+    SELECT * INTO v_existing
+    FROM public.company_members
+    WHERE id = p_member_id AND company_id = p_company_id;
+
+    IF NOT FOUND THEN
+        RAISE EXCEPTION 'MEMBER_NOT_FOUND';
+    END IF;
+
+    IF v_existing.user_id = auth.uid() AND v_clean_status = 'disabled' THEN
+        RAISE EXCEPTION 'CANNOT_DISABLE_SELF';
+    END IF;
+
+    IF v_existing.is_owner AND NOT public.is_company_owner(p_company_id) THEN
+        RAISE EXCEPTION 'CANNOT_EDIT_OWNER';
+    END IF;
+
+    UPDATE public.company_members
+    SET status = v_clean_status,
+        updated_at = now()
+    WHERE id = p_member_id AND company_id = p_company_id
+    RETURNING * INTO v_updated;
+
+    SELECT * INTO v_role FROM public.company_roles WHERE id = v_updated.role_id;
+
+    INSERT INTO public.company_audit_logs (company_id, actor_user_id, action, details)
+    VALUES (
+        p_company_id,
+        auth.uid(),
+        'member_status_changed',
+        jsonb_build_object('memberId', p_member_id, 'email', v_updated.email, 'status', v_clean_status)
+    );
+
+    RETURN jsonb_build_object(
+        'id', v_updated.id,
+        'company_id', v_updated.company_id,
+        'user_id', v_updated.user_id,
+        'full_name', v_updated.full_name,
+        'email', v_updated.email,
+        'username', v_updated.username,
+        'role_id', v_updated.role_id,
+        'role_key', v_role.key,
+        'role_name', v_role.name,
+        'permission_overrides', v_updated.permission_overrides,
+        'status', v_updated.status,
+        'is_owner', v_updated.is_owner,
+        'created_at', v_updated.created_at
+    );
+END;
+$$;
+
+-- Remove a member from a company (last-owner trigger enforced automatically)
+CREATE OR REPLACE FUNCTION public.remove_company_member_rpc(
+    p_company_id UUID,
+    p_member_id UUID
+)
+RETURNS JSONB
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+    v_existing public.company_members%ROWTYPE;
+BEGIN
+    IF NOT public.has_company_permission(p_company_id, 'canManageUsers') THEN
+        RAISE EXCEPTION 'FORBIDDEN';
+    END IF;
+
+    SELECT * INTO v_existing
+    FROM public.company_members
+    WHERE id = p_member_id AND company_id = p_company_id;
+
+    IF NOT FOUND THEN
+        RAISE EXCEPTION 'MEMBER_NOT_FOUND';
+    END IF;
+
+    IF v_existing.user_id = auth.uid() THEN
+        RAISE EXCEPTION 'CANNOT_REMOVE_SELF';
+    END IF;
+
+    IF v_existing.is_owner AND NOT public.is_company_owner(p_company_id) THEN
+        RAISE EXCEPTION 'CANNOT_EDIT_OWNER';
+    END IF;
+
+    DELETE FROM public.company_members
+    WHERE id = p_member_id AND company_id = p_company_id;
+
+    INSERT INTO public.company_audit_logs (company_id, actor_user_id, action, details)
+    VALUES (
+        p_company_id,
+        auth.uid(),
+        'member_removed',
+        jsonb_build_object('memberId', p_member_id, 'email', v_existing.email)
+    );
+
+    RETURN jsonb_build_object('ok', true);
+END;
+$$;
+
+-- Create a custom role in a company
+CREATE OR REPLACE FUNCTION public.create_company_role_rpc(
+    p_company_id UUID,
+    p_name TEXT,
+    p_description TEXT DEFAULT '',
+    p_permissions JSONB DEFAULT '{}'::jsonb
+)
+RETURNS JSONB
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+    v_name TEXT := trim(COALESCE(p_name, ''));
+    v_key TEXT;
+    v_role public.company_roles%ROWTYPE;
+BEGIN
+    IF NOT public.has_company_permission(p_company_id, 'canManageRoles') THEN
+        RAISE EXCEPTION 'FORBIDDEN';
+    END IF;
+
+    IF length(v_name) < 2 THEN
+        RAISE EXCEPTION 'INVALID_ROLE_NAME';
+    END IF;
+
+    PERFORM public.assert_no_privilege_escalation(p_company_id, p_permissions);
+
+    v_key := 'custom_' || substr(md5(gen_random_uuid()::text), 1, 10);
+
+    INSERT INTO public.company_roles (
+        company_id, key, name, description, is_system, is_owner_role, permissions
+    )
+    VALUES (
+        p_company_id,
+        v_key,
+        v_name,
+        trim(COALESCE(p_description, '')),
+        false,
+        false,
+        COALESCE(p_permissions, '{}'::jsonb)
+    )
+    RETURNING * INTO v_role;
+
+    INSERT INTO public.company_audit_logs (company_id, actor_user_id, action, details)
+    VALUES (
+        p_company_id,
+        auth.uid(),
+        'role_created',
+        jsonb_build_object('roleId', v_role.id, 'name', v_role.name)
+    );
+
+    RETURN row_to_json(v_role)::jsonb;
+END;
+$$;
+
+-- Update an existing non-owner role
+CREATE OR REPLACE FUNCTION public.update_company_role_rpc(
+    p_company_id UUID,
+    p_role_id UUID,
+    p_name TEXT DEFAULT NULL,
+    p_description TEXT DEFAULT NULL,
+    p_permissions JSONB DEFAULT NULL
+)
+RETURNS JSONB
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+    v_existing public.company_roles%ROWTYPE;
+    v_updated public.company_roles%ROWTYPE;
+BEGIN
+    IF NOT public.has_company_permission(p_company_id, 'canManageRoles') THEN
+        RAISE EXCEPTION 'FORBIDDEN';
+    END IF;
+
+    SELECT * INTO v_existing
+    FROM public.company_roles
+    WHERE id = p_role_id AND company_id = p_company_id;
+
+    IF NOT FOUND THEN
+        RAISE EXCEPTION 'ROLE_NOT_FOUND';
+    END IF;
+
+    IF v_existing.is_owner_role THEN
+        RAISE EXCEPTION 'CANNOT_EDIT_OWNER_ROLE';
+    END IF;
+
+    IF p_permissions IS NOT NULL THEN
+        PERFORM public.assert_no_privilege_escalation(p_company_id, p_permissions);
+    END IF;
+
+    UPDATE public.company_roles
+    SET name = COALESCE(NULLIF(trim(p_name), ''), name),
+        description = COALESCE(p_description, description),
+        permissions = COALESCE(p_permissions, permissions),
+        updated_at = now()
+    WHERE id = p_role_id AND company_id = p_company_id
+    RETURNING * INTO v_updated;
+
+    INSERT INTO public.company_audit_logs (company_id, actor_user_id, action, details)
+    VALUES (
+        p_company_id,
+        auth.uid(),
+        'role_updated',
+        jsonb_build_object('roleId', v_updated.id, 'name', v_updated.name)
+    );
+
+    RETURN row_to_json(v_updated)::jsonb;
+END;
+$$;
+
+-- Delete a custom role that is not assigned to any member
+CREATE OR REPLACE FUNCTION public.delete_company_role_rpc(
+    p_company_id UUID,
+    p_role_id UUID
+)
+RETURNS JSONB
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+    v_existing public.company_roles%ROWTYPE;
+    v_assigned_count INTEGER := 0;
+BEGIN
+    IF NOT public.has_company_permission(p_company_id, 'canManageRoles') THEN
+        RAISE EXCEPTION 'FORBIDDEN';
+    END IF;
+
+    SELECT * INTO v_existing
+    FROM public.company_roles
+    WHERE id = p_role_id AND company_id = p_company_id;
+
+    IF NOT FOUND THEN
+        RAISE EXCEPTION 'ROLE_NOT_FOUND';
+    END IF;
+
+    IF v_existing.is_system OR v_existing.is_owner_role THEN
+        RAISE EXCEPTION 'CANNOT_DELETE_SYSTEM_ROLE';
+    END IF;
+
+    SELECT COUNT(*) INTO v_assigned_count
+    FROM public.company_members
+    WHERE company_id = p_company_id AND role_id = p_role_id;
+
+    IF v_assigned_count > 0 THEN
+        RAISE EXCEPTION 'ROLE_IN_USE';
+    END IF;
+
+    DELETE FROM public.company_roles
+    WHERE id = p_role_id AND company_id = p_company_id;
+
+    INSERT INTO public.company_audit_logs (company_id, actor_user_id, action, details)
+    VALUES (
+        p_company_id,
+        auth.uid(),
+        'role_deleted',
+        jsonb_build_object('roleId', p_role_id, 'name', v_existing.name)
+    );
+
+    RETURN jsonb_build_object('ok', true);
+END;
+$$;
+
+-- Explicit EXECUTE grants for Supabase PostgREST roles
+REVOKE ALL ON FUNCTION public.seed_company_roles_internal(UUID, JSONB) FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON FUNCTION public.generate_unique_company_slug(TEXT) FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON FUNCTION public.assert_no_privilege_escalation(UUID, JSONB) FROM PUBLIC, anon, authenticated;
+
+GRANT EXECUTE ON FUNCTION public.get_onboarding_status() TO anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.resolve_login_email(TEXT) TO anon, authenticated;
+
+GRANT EXECUTE ON FUNCTION public.complete_company_onboarding_rpc(JSONB, JSONB, JSONB, JSONB) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.claim_legacy_company_rpc(JSONB, JSONB, JSONB, JSONB) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.get_workspace_context_rpc(UUID) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.update_company_profile_rpc(UUID, JSONB) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.update_company_operations_rpc(UUID, BOOLEAN, BOOLEAN) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.apply_restart_onboarding_rpc(UUID, JSONB, JSONB, JSONB) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.add_company_member_rpc(UUID, TEXT, TEXT, TEXT, UUID, TEXT, JSONB, UUID) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.update_company_member_rpc(UUID, UUID, JSONB) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.set_company_member_status_rpc(UUID, UUID, TEXT) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.remove_company_member_rpc(UUID, UUID) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.create_company_role_rpc(UUID, TEXT, TEXT, JSONB) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.update_company_role_rpc(UUID, UUID, TEXT, TEXT, JSONB) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.delete_company_role_rpc(UUID, UUID) TO authenticated;
+
 COMMIT;
+
+-- Ask Supabase PostgREST to reload the schema cache immediately so new RPCs work right away
+NOTIFY pgrst, 'reload schema';
+

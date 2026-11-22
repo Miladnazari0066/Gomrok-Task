@@ -16,6 +16,7 @@ import {
   ShieldCheck,
   Sparkles,
   Loader2,
+  RefreshCw,
 } from 'lucide-react';
 import {
   getSupabase,
@@ -25,7 +26,6 @@ import {
 } from '../lib/supabase';
 import {
   fetchOnboardingStatus,
-  fetchServerHealth,
   loginWithIdentifier,
 } from '../services/workspaceApi';
 import { SUPABASE_SQL_SCHEMA } from '../utils/sqlSchema';
@@ -54,7 +54,8 @@ export const LoginGate: React.FC<LoginGateProps> = ({
   const [error, setError] = useState(externalError || '');
   const [isAccessGranted, setIsAccessGranted] = useState(false);
 
-  const [serverAdminReady, setServerAdminReady] = useState<boolean | null>(null);
+  const [schemaReady, setSchemaReady] = useState<boolean | null>(null);
+  const [checkingSchema, setCheckingSchema] = useState(false);
   const [hasUnclaimedLegacy, setHasUnclaimedLegacy] = useState(false);
   const [legacyCompanyName, setLegacyCompanyName] = useState('');
   const [showSetupHelper, setShowSetupHelper] = useState(false);
@@ -78,21 +79,51 @@ export const LoginGate: React.FC<LoginGateProps> = ({
     }
   }, [isLoggingOut, onLogoutComplete]);
 
-  useEffect(() => {
-    let active = true;
-    Promise.all([
-      fetchServerHealth().catch(() => ({ ok: false, supabaseConfigured: false, adminConfigured: false })),
-      fetchOnboardingStatus().catch(() => ({
-        adminConfigured: false,
-        hasUnclaimedLegacyCompany: false,
-        legacyCompanyName: '',
-      })),
-    ]).then(([health, status]) => {
-      if (!active) return;
-      setServerAdminReady(Boolean(health.adminConfigured));
+  const checkSupabaseSchemaStatus = async () => {
+    if (!isSupabaseConfigured()) {
+      setSchemaReady(false);
+      setHasUnclaimedLegacy(false);
+      setLegacyCompanyName('');
+      return;
+    }
+    setCheckingSchema(true);
+    try {
+      const status = await fetchOnboardingStatus();
+      setSchemaReady(Boolean(status.schemaReady));
       setHasUnclaimedLegacy(Boolean(status.hasUnclaimedLegacyCompany));
       setLegacyCompanyName(status.legacyCompanyName || '');
-    });
+    } catch {
+      setSchemaReady(false);
+      setHasUnclaimedLegacy(false);
+      setLegacyCompanyName('');
+    } finally {
+      setCheckingSchema(false);
+    }
+  };
+
+  useEffect(() => {
+    let active = true;
+    if (!clientConfigured) {
+      setSchemaReady(false);
+      return;
+    }
+    setCheckingSchema(true);
+    fetchOnboardingStatus()
+      .then((status) => {
+        if (!active) return;
+        setSchemaReady(Boolean(status.schemaReady));
+        setHasUnclaimedLegacy(Boolean(status.hasUnclaimedLegacyCompany));
+        setLegacyCompanyName(status.legacyCompanyName || '');
+      })
+      .catch(() => {
+        if (!active) return;
+        setSchemaReady(false);
+        setHasUnclaimedLegacy(false);
+        setLegacyCompanyName('');
+      })
+      .finally(() => {
+        if (active) setCheckingSchema(false);
+      });
     return () => {
       active = false;
     };
@@ -104,7 +135,7 @@ export const LoginGate: React.FC<LoginGateProps> = ({
     if (ok) {
       setClientConfigured(true);
       setError('');
-      setShowSetupHelper(false);
+      checkSupabaseSchemaStatus();
     } else {
       setError('آدرس یا کلید Anon Key پروژه Supabase معتبر نیست.');
     }
@@ -139,31 +170,17 @@ export const LoginGate: React.FC<LoginGateProps> = ({
     setError('');
 
     try {
-      if (serverAdminReady) {
-        const res = await loginWithIdentifier(cleanId, password);
-        const { error: sessErr } = await supabase.auth.setSession({
-          access_token: res.accessToken,
-          refresh_token: res.refreshToken,
-        });
-        if (sessErr) throw sessErr;
-      } else {
-        if (!cleanId.includes('@')) {
-          throw new Error('برای ورود با نام کاربری باید متغیر SUPABASE_SERVICE_ROLE_KEY در سرور تنظیم شود، یا با ایمیل وارد شوید.');
-        }
-        const { error: signErr } = await supabase.auth.signInWithPassword({
-          email: cleanId.toLowerCase(),
-          password,
-        });
-        if (signErr) {
-          throw new Error('ایمیل یا رمز عبور اشتباه است یا حساب شما غیرفعال شده است.');
-        }
-      }
+      await loginWithIdentifier(cleanId, password);
 
       setIsAccessGranted(true);
       setTimeout(() => {
         onSuccess();
       }, 650);
     } catch (err: any) {
+      if (err?.code === 'SCHEMA_NOT_READY') {
+        setSchemaReady(false);
+        setShowSetupHelper(true);
+      }
       setError(err?.message || 'خطا در احراز هویت. لطفاً اطلاعات ورود را بررسی کنید.');
     } finally {
       setLoading(false);
@@ -346,51 +363,82 @@ export const LoginGate: React.FC<LoginGateProps> = ({
                   onClick={() => setShowSetupHelper((prev) => !prev)}
                   className="text-cyan-300 hover:text-cyan-200 underline underline-offset-4 cursor-pointer"
                 >
-                  {showSetupHelper ? 'بستن راهنمای سرور' : 'پیکربندی Supabase و SQL'}
+                  {showSetupHelper ? 'بستن راهنمای Supabase' : 'راهنمای اتصال و SQL'}
                 </button>
               </div>
             </>
           )}
         </motion.div>
 
-        {/* Collapsible Supabase Connection & SQL Migration Helper */}
-        {(showSetupHelper || !clientConfigured || serverAdminReady === false) && !isLoggingOut && !isAccessGranted && (
+        {/* Collapsible Direct-Supabase Connection & Step-by-Step SQL Guide */}
+        {(showSetupHelper || !clientConfigured || schemaReady === false) && !isLoggingOut && !isAccessGranted && (
           <div className="glass-panel p-4 sm:p-5 space-y-3.5 text-xs border border-white/12">
-            <div className="flex items-center justify-between gap-2">
+            <div className="flex flex-wrap items-center justify-between gap-2">
               <div className="flex items-center gap-2 font-bold text-slate-200">
                 <Database className="w-4 h-4 text-cyan-400" />
-                <span>وضعیت اتصال Supabase چندشرکتی</span>
+                <span>اتصال مستقیم Supabase چندشرکتی</span>
               </div>
-              <button
-                type="button"
-                onClick={handleCopySql}
-                className="min-h-[34px] px-3 py-1 rounded-lg bg-cyan-500/15 border border-cyan-400/35 text-cyan-200 font-bold flex items-center gap-1.5 cursor-pointer"
-              >
-                {copiedSql ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
-                <span>{copiedSql ? 'اسکریپت SQL کپی شد' : 'کپی اسکریپت مهاجرت SQL'}</span>
-              </button>
+              <div className="flex items-center gap-1.5">
+                <button
+                  type="button"
+                  onClick={checkSupabaseSchemaStatus}
+                  disabled={checkingSchema}
+                  className="min-h-[34px] px-2.5 py-1 rounded-lg bg-white/5 hover:bg-white/10 border border-white/15 text-slate-200 font-bold flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                  title="بررسی مجدد وضعیت پایگاه‌داده"
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 ${checkingSchema ? 'animate-spin text-cyan-300' : ''}`} />
+                  <span>بررسی مجدد</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={handleCopySql}
+                  className="min-h-[34px] px-3 py-1 rounded-lg bg-cyan-500/15 border border-cyan-400/35 text-cyan-200 font-bold flex items-center gap-1.5 cursor-pointer"
+                >
+                  {copiedSql ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
+                  <span>{copiedSql ? 'اسکریپت SQL کپی شد' : 'کپی اسکریپت SQL'}</span>
+                </button>
+              </div>
             </div>
 
             <div className="grid grid-cols-2 gap-2 text-[11px]">
               <div className="p-2.5 rounded-xl bg-white/[0.03] border border-white/8">
-                <span className="text-slate-400 block">اتصال کلاینت (Anon):</span>
+                <span className="text-slate-400 block">اتصال پروژه Supabase:</span>
                 <span className={clientConfigured ? 'text-emerald-300 font-bold' : 'text-amber-300 font-bold'}>
-                  {clientConfigured ? 'متصل' : 'نیاز به تنظیم'}
+                  {clientConfigured ? 'متصل (بدون نیاز به سرور)' : 'نیاز به تنظیم'}
                 </span>
               </div>
               <div className="p-2.5 rounded-xl bg-white/[0.03] border border-white/8">
-                <span className="text-slate-400 block">سرویس ادمین سرور:</span>
-                <span className={serverAdminReady ? 'text-emerald-300 font-bold' : 'text-amber-300 font-bold'}>
-                  {serverAdminReady === null ? 'در حال بررسی...' : serverAdminReady ? 'آماده' : 'نیاز به تنظیم Secret'}
+                <span className="text-slate-400 block">اسکریپت چندشرکتی (v5.1):</span>
+                <span className={schemaReady ? 'text-emerald-300 font-bold' : 'text-amber-300 font-bold'}>
+                  {checkingSchema || schemaReady === null
+                    ? 'در حال بررسی...'
+                    : schemaReady
+                      ? 'اجرا شده و آماده'
+                      : 'نیاز به اجرا در SQL Editor'}
                 </span>
               </div>
             </div>
 
-            {serverAdminReady === false && (
-              <p className="text-[11px] text-amber-200/90 leading-relaxed bg-amber-500/10 border border-amber-500/30 rounded-xl p-2.5">
-                برای ثبت شرکت جدید و ساخت فوری کاربران، متغیرهای <code className="font-mono">SUPABASE_URL</code> و{' '}
-                <code className="font-mono">SUPABASE_SERVICE_ROLE_KEY</code> را در بخش Secrets سرور تنظیم کرده و اسکریپت SQL را در Supabase SQL Editor اجرا کنید.
-              </p>
+            {schemaReady === false && clientConfigured && (
+              <div className="text-[11px] text-amber-100/95 leading-relaxed bg-amber-500/10 border border-amber-500/30 rounded-xl p-3 space-y-2">
+                <p className="font-bold text-amber-200">
+                  راهنمای قدم‌به‌قدم فعال‌سازی ثبت شرکت (فقط یک‌بار):
+                </p>
+                <ol className="list-decimal pr-4 space-y-1.5 text-slate-200">
+                  <li>
+                    دکمه <b>«کپی اسکریپت SQL»</b> در بالا را بزنید.
+                  </li>
+                  <li>
+                    وارد داشبورد Supabase پروژه خود شوید، بخش <b>SQL Editor</b> را باز کنید، روی <b>New query</b> بزنید، کد را بچسبانید و دکمه <b>Run</b> را اجرا کنید (هیچ داده قبلی حذف نمی‌شود).
+                  </li>
+                  <li>
+                    برای ورود فوری پس از ثبت شرکت: در منوی <b>Authentication → Providers → Email</b> تیک گزینه <b>Confirm email</b> را برداشته و ذخیره (Save) کنید.
+                  </li>
+                  <li>
+                    به همین صفحه برگردید و دکمه <b>«بررسی مجدد»</b> را بزنید تا وضعیت «اجرا شده و آماده» شود.
+                  </li>
+                </ol>
+              </div>
             )}
 
             {showSetupHelper && (
@@ -415,7 +463,7 @@ export const LoginGate: React.FC<LoginGateProps> = ({
                   type="submit"
                   className="w-full min-h-[40px] rounded-xl ios-glass-btn text-cyan-200 font-bold text-xs cursor-pointer"
                 >
-                  ذخیره اتصال کلاینت Supabase
+                  ذخیره اتصال پروژه Supabase
                 </button>
               </form>
             )}
