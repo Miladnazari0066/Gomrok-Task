@@ -20,9 +20,10 @@ import {
 } from 'lucide-react';
 import {
   getSavedSupabaseCredentials,
-  saveSupabaseCredentials,
+  saveSupabaseCredentialsDetailed,
   clearSupabaseCredentials,
   isSupabaseConfigured,
+  testSupabaseConnectionLive,
 } from '../lib/supabase';
 import { fetchAllDataFromCloud, migrateLocalDataToCloud, AllAppData } from '../services/db';
 import { SUPABASE_SQL_SCHEMA } from '../utils/sqlSchema';
@@ -107,23 +108,41 @@ export const CloudDbSyncModal: React.FC<CloudDbSyncModalProps> = ({
 
   const handleSaveConnection = async () => {
     if (!urlInput.trim() || !keyInput.trim()) {
-      notify('لطفاً آدرس Supabase URL و Anon Key را وارد کنید', 'err');
+      notify('لطفاً آدرس پروژه Supabase (Project URL) و کلید عمومی Publishable / Anon Key را وارد کنید', 'err');
       return;
     }
 
     setTesting(true);
     setTableMissing(false);
-    const success = saveSupabaseCredentials(urlInput, keyInput);
+    const saved = saveSupabaseCredentialsDetailed(urlInput, keyInput);
 
-    if (!success) {
+    if (!saved.ok) {
       setTesting(false);
-      notify('آدرس یا کلید نامعتبر است (آدرس باید با https:// شروع شود و کلید عمومی Anon Key باشد)', 'err');
+      notify(saved.error || 'آدرس پروژه یا کلید عمومی معتبر نیست', 'err');
+      return;
+    }
+
+    const normalizedUrl = saved.normalizedUrl || urlInput.trim();
+    const normalizedKey = saved.normalizedKey || keyInput.trim();
+    setUrlInput(normalizedUrl);
+    setKeyInput(normalizedKey);
+
+    const liveRes = await testSupabaseConnectionLive(normalizedUrl, normalizedKey);
+    if (!liveRes.connectionOk) {
+      setTesting(false);
+      notify(liveRes.steps.connection.message, 'err');
+      return;
+    }
+    if (!liveRes.schemaReady) {
+      setTesting(false);
+      setTableMissing(true);
+      notify('اتصال برقرار شد اما اسکریپت SQL چندشرکتی (v5.1) هنوز اجرا نشده است. از تب اسکریپت SQL کد را کپی و اجرا کنید.', 'err');
       return;
     }
 
     if (!companyId) {
       setTesting(false);
-      notify('تنظیمات اتصال ذخیره شد. جهت همگام‌سازی ابتدا وارد فضای کاری شرکت شوید.', 'ok');
+      notify('اتصال امن به Supabase برقرار شد. جهت همگام‌سازی ابتدا وارد فضای کاری شرکت شوید.', 'ok');
       return;
     }
 
@@ -470,13 +489,15 @@ export const CloudDbSyncModal: React.FC<CloudDbSyncModalProps> = ({
                   </div>
 
                   <div>
-                    <label className="block text-slate-400 mb-1 font-medium">Anon Public Key:</label>
+                    <label className="block text-slate-400 mb-1 font-medium">
+                      Publishable Key (جدید) یا Anon Public Key:
+                    </label>
                     <div className="relative">
                       <input
                         type="password"
                         value={keyInput}
                         onChange={(e) => setKeyInput(e.target.value)}
-                        placeholder="eyJhbGciOiJIUzI1NiIsInR5cCI6..."
+                        placeholder="sb_publishable_... یا eyJhbGciOi..."
                         className="w-full glass-input pr-9 pl-3 py-2.5 text-xs font-mono text-amber-300"
                         dir="ltr"
                       />

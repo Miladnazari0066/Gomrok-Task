@@ -507,6 +507,19 @@ export const CompanyOnboardingWizard: React.FC<CompanyOnboardingWizardProps> = (
                 </span>
               </div>
             )}
+            {errorCode === 'EMAIL_CONFIRMATION_REQUIRED' && (
+              <div className="pt-2 border-t border-rose-400/20 space-y-1.5 text-[11px] text-amber-100">
+                <p className="font-bold text-amber-200">
+                  راهنمای رفع سریع (۴ قدم در Supabase — اطلاعات فرم شما حفظ شده است):
+                </p>
+                <ol className="list-decimal pr-4 space-y-1 text-slate-200 leading-relaxed">
+                  <li>در داشبورد Supabase از منوی سمت چپ وارد <b>Authentication</b> شوید.</li>
+                  <li>بخش <b>Sign In / Providers</b> (یا <b>Providers</b>) را باز کرده و روی <b>Email</b> کلیک کنید.</li>
+                  <li>گزینه <b>Confirm email</b> را خاموش (<span dir="ltr" className="font-mono text-amber-200">OFF</span>) کرده و <b>Save</b> را بزنید.</li>
+                  <li>سپس در همین صفحه دوباره دکمه <b>«تایید و ایجاد فضای کاری»</b> را بزنید.</li>
+                </ol>
+              </div>
+            )}
           </div>
         )}
 

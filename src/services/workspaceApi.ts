@@ -173,8 +173,19 @@ function translateSupabaseError(err: any, fallbackMessage: string): Error {
   if (lower.includes('password should be at least')) {
     return buildError('رمز عبور باید حداقل ۶ کاراکتر معتبر داشته باشد.', { status: 400 });
   }
+  if (
+    lower.includes('invalid api key') ||
+    lower.includes('apikey') ||
+    lower.includes('invalid jwt') ||
+    lower.includes('no api key found')
+  ) {
+    return buildError(
+      'کلید عمومی (Anon / Publishable Key) واردشده نامعتبر است. لطفاً کلید صحیح را از بخش Project Settings → API در داشبورد Supabase کپی کنید.',
+      { status: 401, code: 'INVALID_API_KEY' }
+    );
+  }
   if (lower.includes('failed to fetch') || lower.includes('networkerror')) {
-    return buildError('خطا در برقراری ارتباط با سرور Supabase. اتصال اینترنت یا آدرس پروژه را بررسی کنید.', {
+    return buildError('خطا در برقراری ارتباط با سرور Supabase. آدرس پروژه یا اتصال اینترنت را بررسی کنید.', {
       code: 'NETWORK_ERROR',
     });
   }
