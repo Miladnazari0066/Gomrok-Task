@@ -29,16 +29,24 @@ import { CustomsLetter, JalaliDate } from '../types';
 import { fa, todayJ, uid } from '../utils/jalali';
 import { JalaliDatePicker } from './JalaliDatePicker';
 import { sanitizeInputText, logSecurityEvent } from '../utils/security';
+import { isSupabaseConfigured } from '../lib/supabase';
+import {
+  fetchCustomsLettersCloud,
+  saveCustomsLetterCloud,
+  deleteCustomsLetterCloud,
+} from '../services/db';
 
 interface CustomsLettersSectionProps {
   onClose?: () => void;
+  companyId?: string;
   primaryCompany?: string;
   primaryCargo?: string;
   canManageLetters?: boolean;
   isViewOnly?: boolean;
 }
 
-const STORAGE_KEY = 'gm_customs_letters_user';
+const getLettersStorageKey = (companyId?: string) =>
+  companyId ? `gm_t_${companyId}_customs_letters` : 'gm_customs_letters_user';
 
 // Persian text normalizer for ultrafast and robust searching
 const normalizeFa = (text: string): string => {
@@ -102,13 +110,15 @@ const compressImageFile = (file: File): Promise<{ dataUrl: string; sizeKb: numbe
 
 export const CustomsLettersSection: React.FC<CustomsLettersSectionProps> = ({
   onClose,
+  companyId,
   canManageLetters = true,
   isViewOnly = false,
 }) => {
-  // Letters list loaded from localStorage
-  const [letters, setLetters] = useState<CustomsLetter[]>(() => {
+  const storageKey = getLettersStorageKey(companyId);
+
+  const readCachedLetters = (key: string): CustomsLetter[] => {
     try {
-      const saved = localStorage.getItem(STORAGE_KEY);
+      const saved = localStorage.getItem(key);
       if (saved) {
         const parsed = JSON.parse(saved);
         if (Array.isArray(parsed)) {
@@ -130,19 +140,49 @@ export const CustomsLettersSection: React.FC<CustomsLettersSectionProps> = ({
       console.error('Failed to parse saved customs letters', e);
     }
     return [];
-  });
+  };
+
+  // Letters list loaded from company-scoped localStorage + synced with Supabase
+  const [letters, setLetters] = useState<CustomsLetter[]>(() => readCachedLetters(storageKey));
+
+  // Reload letters when switching companies or mounting with Supabase
+  useEffect(() => {
+    let active = true;
+    const cached = readCachedLetters(storageKey);
+    setLetters(cached);
+
+    if (companyId && isSupabaseConfigured()) {
+      fetchCustomsLettersCloud(companyId)
+        .then((cloudLetters) => {
+          if (!active) return;
+          setLetters(cloudLetters);
+          try {
+            localStorage.setItem(storageKey, JSON.stringify(cloudLetters));
+          } catch {
+            // ignore quota errors
+          }
+        })
+        .catch(() => {
+          // Keep cached letters on offline/error
+        });
+    }
+
+    return () => {
+      active = false;
+    };
+  }, [companyId, storageKey]);
 
   // Effective edit permission
   const userCanManage = canManageLetters && !isViewOnly;
 
-  // Save to localStorage whenever list changes
+  // Save to company-scoped localStorage whenever list changes
   useEffect(() => {
     try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(letters));
+      localStorage.setItem(storageKey, JSON.stringify(letters));
     } catch (e) {
       console.error('Failed to save customs letters to storage', e);
     }
-  }, [letters]);
+  }, [letters, storageKey]);
 
   // Search & Sorting
   const [searchQuery, setSearchQuery] = useState('');
@@ -316,6 +356,12 @@ export const CustomsLettersSection: React.FC<CustomsLettersSectionProps> = ({
 
     setLetters((prev) => [newLetterItem, ...prev]);
 
+    if (companyId && isSupabaseConfigured()) {
+      saveCustomsLetterCloud(newLetterItem, companyId).catch((err) =>
+        console.warn('Supabase sync notice (customs letter add):', err?.message || err)
+      );
+    }
+
     logSecurityEvent({
       type: 'doc_created',
       user: 'کاربر سیستم',
@@ -343,6 +389,12 @@ export const CustomsLettersSection: React.FC<CustomsLettersSectionProps> = ({
       setActiveZoomLetter(null);
     }
 
+    if (companyId && isSupabaseConfigured()) {
+      deleteCustomsLetterCloud(id, companyId).catch((err) =>
+        console.warn('Supabase sync notice (customs letter delete):', err?.message || err)
+      );
+    }
+
     logSecurityEvent({
       type: 'doc_deleted',
       user: 'کاربر سیستم',
@@ -356,9 +408,15 @@ export const CustomsLettersSection: React.FC<CustomsLettersSectionProps> = ({
   const handleSaveEditedTitle = () => {
     if (!userCanManage || !editingLetter || !editTitleValue.trim()) return;
     const sanitized = sanitizeInputText(editTitleValue);
+    const updatedItem: CustomsLetter = { ...editingLetter, title: sanitized };
     setLetters((prev) =>
-      prev.map((l) => (l.id === editingLetter.id ? { ...l, title: sanitized } : l))
+      prev.map((l) => (l.id === editingLetter.id ? updatedItem : l))
     );
+    if (companyId && isSupabaseConfigured()) {
+      saveCustomsLetterCloud(updatedItem, companyId).catch((err) =>
+        console.warn('Supabase sync notice (customs letter edit):', err?.message || err)
+      );
+    }
     setEditingLetter(null);
     setEditTitleValue('');
   };

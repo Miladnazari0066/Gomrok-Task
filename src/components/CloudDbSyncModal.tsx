@@ -32,6 +32,9 @@ import { fa, pad2, toJalali, WDN, JMONTHS } from '../utils/jalali';
 interface CloudDbSyncModalProps {
   isOpen: boolean;
   onClose: () => void;
+  companyId?: string;
+  enableImport?: boolean;
+  enableExport?: boolean;
   localData?: AllAppData;
   lastCloudSyncTime?: Date | null;
   onSyncComplete?: (cloudData: AllAppData) => void;
@@ -42,6 +45,9 @@ interface CloudDbSyncModalProps {
 export const CloudDbSyncModal: React.FC<CloudDbSyncModalProps> = ({
   isOpen,
   onClose,
+  companyId,
+  enableImport = true,
+  enableExport = true,
   localData,
   lastCloudSyncTime,
   onSyncComplete,
@@ -115,8 +121,14 @@ export const CloudDbSyncModal: React.FC<CloudDbSyncModalProps> = ({
       return;
     }
 
+    if (!companyId) {
+      setTesting(false);
+      notify('تنظیمات اتصال ذخیره شد. جهت همگام‌سازی ابتدا وارد فضای کاری شرکت شوید.', 'ok');
+      return;
+    }
+
     try {
-      const data = await fetchAllDataFromCloud();
+      const data = await fetchAllDataFromCloud({ companyId, enableImport, enableExport });
       setTesting(false);
       notify('اتصال به دیتابیس ابری Supabase برقرار شد', 'ok');
       if (data) {
@@ -144,10 +156,14 @@ export const CloudDbSyncModal: React.FC<CloudDbSyncModalProps> = ({
   };
 
   const handleFetchLatest = async () => {
+    if (!companyId) {
+      notify('فضای کاری شرکت فعال نیست', 'err');
+      return;
+    }
     setLoading(true);
     setTableMissing(false);
     try {
-      const cloudData = await fetchAllDataFromCloud();
+      const cloudData = await fetchAllDataFromCloud({ companyId, enableImport, enableExport });
       setLoading(false);
       if (cloudData) {
         triggerSyncComplete(cloudData);
@@ -169,14 +185,14 @@ export const CloudDbSyncModal: React.FC<CloudDbSyncModalProps> = ({
   };
 
   const handleManualPushCloud = async () => {
-    if (!isConfigured) {
-      notify('ابتدا دیتابیس ابری را متصل کنید', 'err');
+    if (!isConfigured || !companyId) {
+      notify('ابتدا دیتابیس ابری و فضای کاری شرکت را متصل کنید', 'err');
       return;
     }
 
     setLoading(true);
     try {
-      await migrateLocalDataToCloud(safeLocalData);
+      await migrateLocalDataToCloud(safeLocalData, { companyId, enableImport, enableExport });
       setLoading(false);
       notify('تمام داده‌های محلی با موفقیت به دیتابیس ابری منتقل گردیدند', 'ok');
     } catch (err: any) {
@@ -247,8 +263,8 @@ export const CloudDbSyncModal: React.FC<CloudDbSyncModalProps> = ({
 
         triggerSyncComplete(restoredData);
 
-        if (isConfigured) {
-          await migrateLocalDataToCloud(restoredData);
+        if (isConfigured && companyId) {
+          await migrateLocalDataToCloud(restoredData, { companyId, enableImport, enableExport });
         }
 
         notify('اطلاعات سامانه با موفقیت از فایل پشتیبان بازیابی گردید', 'ok');

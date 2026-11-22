@@ -301,6 +301,144 @@ export interface UserPermissions {
   canModifyCompletedExits?: boolean;
   canManageTasks?: boolean;
   canManageNotifications?: boolean;
+  // Multi-Tenant SaaS & Enterprise Governance Permissions
+  canManageUsers?: boolean;
+  canManageRoles?: boolean;
+  canManageCompanySettings?: boolean;
+  canManageSystemConfig?: boolean;
 }
 
 export type UserPermissionsMap = Record<string, UserPermissions>;
+
+export type BusinessOperationMode = 'import_only' | 'export_only' | 'both';
+
+export type BuiltInRoleKey =
+  | 'owner'
+  | 'admin'
+  | 'import_operator'
+  | 'export_operator'
+  | 'inventory_manager'
+  | 'report_viewer';
+
+export interface CompanyProfile {
+  id: string;
+  name: string;
+  slug: string;
+  logoUrl: string;
+  registrationNumber: string;
+  nationalId: string;
+  phone: string;
+  email: string;
+  address: string;
+  settings: Record<string, unknown>;
+  enableImport: boolean;
+  enableExport: boolean;
+  onboardingCompleted: boolean;
+  onboardingCompletedAt?: string | null;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface CompanyRole {
+  id: string;
+  companyId: string;
+  key: string;
+  name: string;
+  description: string;
+  isSystem: boolean;
+  isOwnerRole: boolean;
+  permissions: UserPermissions;
+}
+
+export interface CompanyMember {
+  id: string;
+  companyId: string;
+  userId: string;
+  fullName: string;
+  email: string;
+  username: string;
+  roleId: string;
+  roleKey?: string;
+  roleName?: string;
+  permissionOverrides: Partial<UserPermissions>;
+  status: 'active' | 'disabled';
+  isOwner: boolean;
+  createdAt?: string;
+}
+
+export interface CompanyAuditLog {
+  id: string;
+  companyId: string;
+  actorUserId?: string | null;
+  action: string;
+  details: Record<string, unknown>;
+  createdAt: string;
+}
+
+export interface WorkspaceMembershipSummary {
+  companyId: string;
+  companyName: string;
+  companySlug: string;
+  logoUrl: string;
+  roleName: string;
+  isOwner: boolean;
+  status: 'active' | 'disabled';
+  onboardingCompleted: boolean;
+}
+
+export interface WorkspaceContextData {
+  company: CompanyProfile;
+  member: CompanyMember;
+  role: CompanyRole;
+  effectivePermissions: UserPermissions;
+  roles: CompanyRole[];
+  members?: CompanyMember[];
+  allMemberships?: WorkspaceMembershipSummary[];
+}
+
+export interface OnboardingRoleDraft {
+  key: string;
+  name: string;
+  description: string;
+  isSystem: boolean;
+  isOwnerRole: boolean;
+  permissions: UserPermissions;
+}
+
+export interface OnboardingUserDraft {
+  tempId: string;
+  fullName: string;
+  email: string;
+  username?: string;
+  password: string;
+  roleKey: string;
+  status: 'active' | 'disabled';
+  permissionOverrides?: Partial<UserPermissions>;
+}
+
+export interface OnboardingPayload {
+  company: {
+    name: string;
+    logoUrl?: string;
+    registrationNumber?: string;
+    nationalId?: string;
+    phone?: string;
+    email?: string;
+    address?: string;
+    settings?: Record<string, unknown>;
+  };
+  operations: {
+    mode: BusinessOperationMode;
+    enableImport: boolean;
+    enableExport: boolean;
+  };
+  owner?: {
+    fullName: string;
+    email: string;
+    username?: string;
+    password: string;
+  };
+  roles: OnboardingRoleDraft[];
+  additionalUsers: OnboardingUserDraft[];
+}
+

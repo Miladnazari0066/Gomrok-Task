@@ -9,31 +9,37 @@ import {
   RefreshCw,
   LogOut,
   UserCheck,
-  Eye,
   ChevronLeft,
-  AlertTriangle,
+  Building2,
+  Crown,
 } from 'lucide-react';
 import { toJalali, WDN, JMONTHS, fa, pad2 } from '../utils/jalali';
 import { isSupabaseConfigured } from '../lib/supabase';
-import { UserRole } from './LoginGate';
 import { PWAInstallButton } from './PWAInstallButton';
+import type {
+  CompanyMember,
+  CompanyProfile,
+  WorkspaceMembershipSummary,
+} from '../types';
 
 interface MobileToolsViewProps {
   onLogout: () => void;
   onOpenCloudDb?: () => void;
   onOpenSummaryModal?: () => void;
   onOpenSecurityCenter?: () => void;
+  onOpenCompanySettings?: () => void;
   onOpenNotifications?: () => void;
   onOpenDailyTasks?: () => void;
   unreadNotificationsCount?: number;
   pendingTasksCount?: number;
   overdueTasksCount?: number;
-  activeOperator?: 'نظری' | 'یوسفی' | 'افسر';
-  onSwitchOperator?: (op: 'نظری' | 'یوسفی' | 'افسر') => void;
-  isDefaultPasswordActive?: boolean;
+  company?: CompanyProfile | null;
+  member?: CompanyMember | null;
+  roleName?: string;
+  allMemberships?: WorkspaceMembershipSummary[];
+  onSwitchCompany?: (companyId: string) => void;
   lastCloudSyncTime?: Date | null;
   isCloudSyncing?: boolean;
-  userRole?: UserRole;
 }
 
 export const MobileToolsView: React.FC<MobileToolsViewProps> = ({
@@ -41,24 +47,24 @@ export const MobileToolsView: React.FC<MobileToolsViewProps> = ({
   onOpenCloudDb,
   onOpenSummaryModal,
   onOpenSecurityCenter,
+  onOpenCompanySettings,
   onOpenNotifications,
   onOpenDailyTasks,
   unreadNotificationsCount = 0,
   pendingTasksCount = 0,
   overdueTasksCount = 0,
-  activeOperator = 'نظری',
-  onSwitchOperator,
-  isDefaultPasswordActive = false,
+  company,
+  member,
+  roleName,
+  allMemberships = [],
+  onSwitchCompany,
   lastCloudSyncTime = null,
   isCloudSyncing = false,
-  userRole,
 }) => {
   const [timeStr, setTimeStr] = useState('');
   const [dateStr, setDateStr] = useState('');
 
   const isCloud = isSupabaseConfigured();
-  const activeRole: UserRole =
-    userRole || (sessionStorage.getItem('gm_role') as UserRole) || 'admin';
 
   useEffect(() => {
     const tick = () => {
@@ -98,55 +104,52 @@ export const MobileToolsView: React.FC<MobileToolsViewProps> = ({
         </span>
       </div>
 
-      {/* Section 1: Active Operator / Account */}
+      {/* Section 1: Active Account & Company Workspace */}
       <div className="space-y-2">
         <p className="px-1 text-xs font-semibold text-slate-400">
-          حساب کاربری و دسترسی فعال
+          حساب کاربری و فضای کاری فعال
         </p>
-        <div className="glass-panel p-4 flex items-center justify-between gap-3">
-          <div className="flex items-center gap-3 min-w-0">
-            <div className="w-10 h-10 rounded-xl bg-cyan-500/15 border border-cyan-400/30 flex items-center justify-center text-cyan-300 shrink-0">
-              {activeRole === 'admin' ? (
-                <UserCheck className="w-5 h-5" />
-              ) : (
-                <Eye className="w-5 h-5 text-amber-300" />
-              )}
+        <div className="glass-panel p-4 space-y-3">
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex items-center gap-3 min-w-0">
+              <div className="w-10 h-10 rounded-xl bg-cyan-500/15 border border-cyan-400/30 flex items-center justify-center text-cyan-300 shrink-0">
+                {member?.isOwner ? (
+                  <Crown className="w-5 h-5 text-amber-400" />
+                ) : (
+                  <UserCheck className="w-5 h-5" />
+                )}
+              </div>
+              <div className="min-w-0">
+                <p className="text-sm font-bold text-slate-100 truncate">
+                  {member?.fullName || 'کاربر سیستم'}
+                </p>
+                <p className="text-xs text-slate-400 truncate mt-0.5 font-mono" dir="ltr">
+                  {member?.email || company?.name || ''}
+                </p>
+              </div>
             </div>
-            <div className="min-w-0">
-              <p className="text-sm font-bold text-slate-100 truncate">
-                {activeRole === 'admin' ? 'اپراتور فعال سامانه' : 'حالت بازدیدکننده'}
-              </p>
-              <p className="text-xs text-slate-400 truncate mt-0.5">
-                {activeRole === 'admin'
-                  ? 'اعمال سطوح دسترسی تفکیک‌شده'
-                  : 'دسترسی فقط‌خواندنی (ناظر)'}
-              </p>
-            </div>
+
+            <span className="px-2.5 py-1 rounded-lg bg-cyan-500/15 border border-cyan-400/30 text-xs font-bold text-cyan-200 shrink-0">
+              {roleName || (member?.isOwner ? 'مالک شرکت' : 'کاربر')}
+            </span>
           </div>
 
-          {activeRole === 'admin' && onSwitchOperator ? (
-            <select
-              value={activeOperator}
-              onChange={(e) =>
-                onSwitchOperator(e.target.value as 'نظری' | 'یوسفی' | 'افسر')
-              }
-              aria-label="انتخاب اپراتور فعال"
-              className="min-h-[44px] px-3 py-2 rounded-xl bg-[#0c162b] border border-cyan-400/40 text-cyan-200 font-bold text-xs outline-none shrink-0 cursor-pointer"
-            >
-              <option value="نظری" className="bg-[#0c0e14] text-slate-100">
-                نظری (مدیر ارشد)
-              </option>
-              <option value="یوسفی" className="bg-[#0c0e14] text-slate-100">
-                یوسفی
-              </option>
-              <option value="افسر" className="bg-[#0c0e14] text-slate-100">
-                افسر
-              </option>
-            </select>
-          ) : (
-            <span className="text-xs font-bold text-amber-300 shrink-0">
-              {activeRole === 'admin' ? 'مدیر' : 'ناظر'}
-            </span>
+          {allMemberships.length > 1 && onSwitchCompany && company && (
+            <div className="pt-3 border-t border-white/10 flex items-center justify-between gap-3">
+              <span className="text-xs text-slate-400 shrink-0">شرکت فعال:</span>
+              <select
+                value={company.id}
+                onChange={(e) => onSwitchCompany(e.target.value)}
+                aria-label="تغییر شرکت فعال"
+                className="min-h-[42px] flex-1 px-3 py-2 rounded-xl bg-[#0c162b] border border-indigo-400/40 text-indigo-200 font-bold text-xs outline-none cursor-pointer"
+              >
+                {allMemberships.map((ms) => (
+                  <option key={ms.companyId} value={ms.companyId} className="bg-[#0c0e14] text-slate-100">
+                    {ms.companyName}
+                  </option>
+                ))}
+              </select>
+            </div>
           )}
         </div>
       </div>
@@ -235,13 +238,36 @@ export const MobileToolsView: React.FC<MobileToolsViewProps> = ({
         </div>
       )}
 
-      {/* Section 3: System & Data Management */}
-      {(onOpenSummaryModal || onOpenSecurityCenter || onOpenCloudDb) && (
+      {/* Section 3: Company & System Management */}
+      {(onOpenCompanySettings || onOpenSummaryModal || onOpenSecurityCenter || onOpenCloudDb) && (
         <div className="space-y-2">
           <p className="px-1 text-xs font-semibold text-slate-400">
-            مدیریت و تنظیمات سامانه
+            مدیریت شرکت و تنظیمات سامانه
           </p>
           <div className="glass-panel overflow-hidden divide-y divide-white/8">
+            {onOpenCompanySettings && (
+              <button
+                type="button"
+                onClick={onOpenCompanySettings}
+                className="w-full min-h-[64px] px-4 py-3 flex items-center justify-between gap-3 text-right transition-colors active:bg-white/[0.06] cursor-pointer"
+              >
+                <div className="flex items-center gap-3.5 min-w-0">
+                  <div className="w-10 h-10 rounded-xl bg-cyan-500/20 border border-cyan-400/40 flex items-center justify-center text-cyan-300 shrink-0">
+                    <Building2 className="w-5 h-5" />
+                  </div>
+                  <div className="min-w-0">
+                    <p className="text-sm font-bold text-slate-100 truncate">
+                      تنظیمات شرکت و کاربران
+                    </p>
+                    <p className="text-xs text-slate-400 truncate mt-0.5">
+                      پروفایل، واردات/صادرات، مدیریت کاربران، نقش‌ها و راه‌اندازی
+                    </p>
+                  </div>
+                </div>
+                <ChevronLeft className="w-4 h-4 text-slate-500 shrink-0" />
+              </button>
+            )}
+
             {onOpenSummaryModal && (
               <button
                 type="button"
@@ -277,18 +303,11 @@ export const MobileToolsView: React.FC<MobileToolsViewProps> = ({
                   </div>
                   <div className="min-w-0">
                     <p className="text-sm font-bold text-slate-100 truncate">
-                      مرکز امنیت و دسترسی‌ها
+                      مرکز امنیت و گزارش‌ها
                     </p>
-                    {isDefaultPasswordActive ? (
-                      <p className="text-xs text-amber-300 flex items-center gap-1 mt-0.5 truncate">
-                        <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
-                        <span>رمز پیش‌فرض فعال است — پیشنهاد به تغییر</span>
-                      </p>
-                    ) : (
-                      <p className="text-xs text-slate-400 truncate mt-0.5">
-                        رمزهای عبور، سطوح دسترسی و گزارش امنیتی
-                      </p>
-                    )}
+                    <p className="text-xs text-slate-400 truncate mt-0.5">
+                      قفل خودکار نشست و گزارش رویدادهای امنیتی
+                    </p>
                   </div>
                 </div>
                 <ChevronLeft className="w-4 h-4 text-slate-500 shrink-0" />

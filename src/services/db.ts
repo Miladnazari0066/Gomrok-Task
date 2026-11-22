@@ -1,6 +1,7 @@
 import { getSupabase, isSupabaseConfigured } from '../lib/supabase';
 import {
   Batch,
+  CustomsLetter,
   DailyTask,
   EntryDoc,
   ExitDoc,
@@ -22,6 +23,12 @@ export interface AllAppData {
   carriers: string[];
   goodsList: string[];
   brands: string[];
+}
+
+export interface TenantQueryScope {
+  companyId: string;
+  enableImport?: boolean;
+  enableExport?: boolean;
 }
 
 export function formatSupabaseError(err: any): Error {
@@ -64,22 +71,23 @@ export function formatSupabaseError(err: any): Error {
     message.includes('Could not find the table') ||
     (message.includes('relation') && message.includes('does not exist'))
   ) {
-    const error = new Error('جداول دیتابیس در پروژه‌ی Supabase ساخته نشده‌اند. لطفاً کد SQL را در Supabase SQL Editor اجرا کنید.');
+    const error = new Error('جداول دیتابیس چندشرکتی در Supabase ساخته نشده‌اند. لطفاً اسکریپت SQL مهاجرت را اجرا کنید.');
     (error as any).code = 'PGRST205';
     (error as any).isTableMissing = true;
     return error;
   }
 
   if (code === 'PGRST204' || code === '42703' || (message.includes('column') && message.includes('does not exist'))) {
-    const error = new Error('ستون‌های جدید ۹۰/۱۰ هنوز در Supabase ایجاد نشده‌اند. اسکریپت SQL بروزرسانی را اجرا کنید.');
+    const error = new Error('ستون‌های جدید چندشرکتی هنوز در Supabase ایجاد نشده‌اند. اسکریپت SQL مهاجرت را اجرا کنید.');
     (error as any).code = code || 'PGRST204';
     (error as any).isColumnMissing = true;
     return error;
   }
 
   if (code === 'PGRST301' || code === '42501' || message.includes('permission denied') || message.includes('row-level security')) {
-    const error = new Error('خطای دسترسی دیتابیس (RLS). لطفاً سیاست‌های دسترسی را در Supabase چک کنید.');
+    const error = new Error('دسترسی به این عملیات توسط سیاست‌های امنیتی دیتابیس (RLS) محدود شده است.');
     (error as any).code = code;
+    (error as any).isRlsDenied = true;
     return error;
   }
 
@@ -113,10 +121,11 @@ export function mapEntryDocFromDb(row: any): EntryDoc {
   };
 }
 
-// Map EntryDoc -> Database Row
-export function mapEntryDocToDb(doc: EntryDoc, legacyOnly = false) {
-  const base: any = {
+// Map EntryDoc -> Database Row (strictly stamped with verified company_id)
+export function mapEntryDocToDb(doc: EntryDoc, companyId: string) {
+  return {
     id: doc.id,
+    company_id: companyId,
     cottage: doc.cottage,
     bl: doc.bl,
     file: doc.file,
@@ -124,6 +133,7 @@ export function mapEntryDocToDb(doc: EntryDoc, legacyOnly = false) {
     carrier: doc.carrier,
     goods: doc.goods,
     brand: doc.brand,
+    mdf_thickness: doc.mdfThickness || '',
     unload_date: doc.unloadDate,
     trailers: doc.trailers,
     unloaded: doc.unloaded,
@@ -131,19 +141,12 @@ export function mapEntryDocToDb(doc: EntryDoc, legacyOnly = false) {
     invoice_paid: doc.invoicePaid,
     receipt: doc.receipt,
     tasks: doc.tasks,
+    clearance: doc.clearance || {},
     created_at: doc.createdAt,
     updated_at: new Date().toISOString(),
   };
-
-  if (!legacyOnly) {
-    base.mdf_thickness = doc.mdfThickness || '';
-    base.clearance = doc.clearance || {};
-  }
-
-  return base;
 }
 
-// Map Database Row -> Batch
 export function mapBatchFromDb(row: any): Batch {
   return {
     id: row.id,
@@ -156,10 +159,10 @@ export function mapBatchFromDb(row: any): Batch {
   };
 }
 
-// Map Batch -> Database Row
-export function mapBatchToDb(batch: Batch) {
+export function mapBatchToDb(batch: Batch, companyId: string) {
   return {
     id: batch.id,
+    company_id: companyId,
     goods: batch.goods,
     file: batch.file,
     created_at: batch.createdAt,
@@ -170,7 +173,6 @@ export function mapBatchToDb(batch: Batch) {
   };
 }
 
-// Map Database Row -> LabRecord
 export function mapLabRecordFromDb(row: any): LabRecord {
   return {
     id: row.id,
@@ -184,10 +186,10 @@ export function mapLabRecordFromDb(row: any): LabRecord {
   };
 }
 
-// Map LabRecord -> Database Row
-export function mapLabRecordToDb(lab: LabRecord) {
+export function mapLabRecordToDb(lab: LabRecord, companyId: string) {
   return {
     id: lab.id,
+    company_id: companyId,
     goods: lab.goods,
     brand: lab.brand,
     sample_date: lab.sampleDate,
@@ -199,7 +201,6 @@ export function mapLabRecordToDb(lab: LabRecord) {
   };
 }
 
-// Map Database Row -> ExitDoc
 export function mapExitDocFromDb(row: any): ExitDoc {
   return {
     id: row.id,
@@ -237,10 +238,10 @@ export function mapExitDocFromDb(row: any): ExitDoc {
   };
 }
 
-// Map ExitDoc -> Database Row
-export function mapExitDocToDb(exit: ExitDoc, legacyOnly = false) {
-  const base: any = {
+export function mapExitDocToDb(exit: ExitDoc, companyId: string) {
+  return {
     id: exit.id,
+    company_id: companyId,
     cottage: exit.cottage,
     bl: exit.bl,
     file: exit.file,
@@ -252,7 +253,9 @@ export function mapExitDocToDb(exit: ExitDoc, legacyOnly = false) {
     trailers: exit.trailers,
     pallets: exit.pallets,
     batch_id: exit.batchId,
+    entry_doc_id: exit.entryDocId || '',
     route: exit.route,
+    partial_exit: exit.partialExit || null,
     evaluator: exit.evaluator,
     jihad: exit.jihad,
     lab: exit.lab,
@@ -262,16 +265,8 @@ export function mapExitDocToDb(exit: ExitDoc, legacyOnly = false) {
     created_at: exit.createdAt,
     updated_at: new Date().toISOString(),
   };
-
-  if (!legacyOnly) {
-    base.partial_exit = exit.partialExit || null;
-    base.entry_doc_id = exit.entryDocId || '';
-  }
-
-  return base;
 }
 
-// Map Database Row -> PhysicalExitTransaction
 export function mapPhysicalExitFromDb(row: any): PhysicalExitTransaction {
   return {
     id: row.id,
@@ -291,10 +286,10 @@ export function mapPhysicalExitFromDb(row: any): PhysicalExitTransaction {
   };
 }
 
-// Map PhysicalExitTransaction -> Database Row
-export function mapPhysicalExitToDb(tx: PhysicalExitTransaction) {
+export function mapPhysicalExitToDb(tx: PhysicalExitTransaction, companyId: string) {
   return {
     id: tx.id,
+    company_id: companyId,
     entry_doc_id: tx.entryDocId,
     exit_doc_id: tx.exitDocId || '',
     cottage: tx.cottage,
@@ -312,7 +307,6 @@ export function mapPhysicalExitToDb(tx: PhysicalExitTransaction) {
   };
 }
 
-// Map Database Row -> DailyTask
 export function mapDailyTaskFromDb(row: any): DailyTask {
   return {
     id: row.id,
@@ -321,7 +315,7 @@ export function mapDailyTaskFromDb(row: any): DailyTask {
     cottage: row.cottage || undefined,
     relatedRecordType: row.related_record_type || undefined,
     relatedRecordId: row.related_record_id || undefined,
-    assignedTo: row.assigned_to || 'نظری',
+    assignedTo: row.assigned_to || '',
     priority: row.priority || 'medium',
     dueDate: row.due_date || { jy: 1403, jm: 1, jd: 1 },
     createdAtDate: row.created_at_date || row.due_date || { jy: 1403, jm: 1, jd: 1 },
@@ -330,16 +324,16 @@ export function mapDailyTaskFromDb(row: any): DailyTask {
     notes: row.notes || '',
     completionDate: row.completion_date || null,
     completedAt: row.completed_at ? Number(row.completed_at) : undefined,
-    createdBy: row.created_by || 'مدیر',
+    createdBy: row.created_by || '',
     isAuto: Boolean(row.is_auto),
     autoSourceKey: row.auto_source_key || undefined,
   };
 }
 
-// Map DailyTask -> Database Row
-export function mapDailyTaskToDb(task: DailyTask) {
+export function mapDailyTaskToDb(task: DailyTask, companyId: string) {
   return {
     id: task.id,
+    company_id: companyId,
     title: task.title,
     description: task.description || '',
     cottage: task.cottage || '',
@@ -361,7 +355,6 @@ export function mapDailyTaskToDb(task: DailyTask) {
   };
 }
 
-// Map NotificationStateRecord
 export function mapNotificationStateFromDb(row: any): NotificationStateRecord {
   return {
     dedupeKey: row.dedupe_key,
@@ -372,8 +365,9 @@ export function mapNotificationStateFromDb(row: any): NotificationStateRecord {
   };
 }
 
-export function mapNotificationStateToDb(rec: NotificationStateRecord) {
+export function mapNotificationStateToDb(rec: NotificationStateRecord, companyId: string) {
   return {
+    company_id: companyId,
     dedupe_key: rec.dedupeKey,
     read: Boolean(rec.read),
     archived: Boolean(rec.archived),
@@ -383,61 +377,91 @@ export function mapNotificationStateToDb(rec: NotificationStateRecord) {
   };
 }
 
+export function mapCustomsLetterFromDb(row: any): CustomsLetter {
+  return {
+    id: row.id,
+    title: row.title || '',
+    imageUrl: row.image_data || '',
+    imageName: row.image_name || undefined,
+    sizeKb: Number(row.image_size_kb || 0) || undefined,
+    date: row.letter_date || undefined,
+    note: row.notes || undefined,
+    createdAt: Number(row.created_at || Date.now()),
+  };
+}
+
+export function mapCustomsLetterToDb(letter: CustomsLetter, companyId: string) {
+  return {
+    id: letter.id,
+    company_id: companyId,
+    title: letter.title,
+    letter_date: letter.date || { jy: 1403, jm: 1, jd: 1 },
+    notes: letter.note || '',
+    image_data: letter.imageUrl || '',
+    image_name: letter.imageName || '',
+    image_size_kb: Math.round(Number(letter.sizeKb || 0)),
+    created_at: letter.createdAt || Date.now(),
+    updated_at: new Date().toISOString(),
+  };
+}
+
 // ----------------------------------------------------------------------
-// API / DATABASE SERVICE METHODS
+// TENANT-SCOPED DATABASE SERVICE METHODS (RLS + EXPLICIT company_id)
 // ----------------------------------------------------------------------
 
-export async function fetchAllDataFromCloud(): Promise<AllAppData | null> {
-  if (!isSupabaseConfigured()) return null;
+export async function fetchAllDataFromCloud(scope: TenantQueryScope): Promise<AllAppData | null> {
+  if (!isSupabaseConfigured() || !scope.companyId) return null;
   const supabase = getSupabase();
   if (!supabase) return null;
 
+  const { companyId, enableImport = true, enableExport = true } = scope;
+
   try {
     const [
-      { data: docsData, error: docsErr },
-      { data: batchesData, error: batchesErr },
-      { data: exitsData, error: exitsErr },
-      { data: labData, error: labErr },
-      { data: lookupData },
+      docsRes,
+      batchesRes,
+      exitsRes,
+      labRes,
+      lookupRes,
+      physRes,
+      tasksRes,
+      notifRes,
     ] = await Promise.all([
-      supabase.from('entry_docs').select('*').order('created_at', { ascending: false }),
-      supabase.from('batches').select('*'),
-      supabase.from('exit_docs').select('*').order('created_at', { ascending: false }),
-      supabase.from('lab_records').select('*').order('created_at', { ascending: false }),
-      supabase.from('lookup_options').select('*').eq('id', 'global_options').maybeSingle(),
+      enableImport
+        ? supabase.from('entry_docs').select('*').eq('company_id', companyId).order('created_at', { ascending: false })
+        : Promise.resolve({ data: [], error: null }),
+      enableImport
+        ? supabase.from('batches').select('*').eq('company_id', companyId)
+        : Promise.resolve({ data: [], error: null }),
+      enableExport
+        ? supabase.from('exit_docs').select('*').eq('company_id', companyId).order('created_at', { ascending: false })
+        : Promise.resolve({ data: [], error: null }),
+      enableExport
+        ? supabase.from('lab_records').select('*').eq('company_id', companyId).order('created_at', { ascending: false })
+        : Promise.resolve({ data: [], error: null }),
+      supabase.from('lookup_options').select('*').eq('company_id', companyId).maybeSingle(),
+      enableExport
+        ? supabase.from('physical_exits').select('*').eq('company_id', companyId).order('created_at', { ascending: false })
+        : Promise.resolve({ data: [], error: null }),
+      supabase.from('daily_tasks').select('*').eq('company_id', companyId).order('created_at', { ascending: false }),
+      supabase.from('notification_states').select('*').eq('company_id', companyId),
     ]);
 
-    if (docsErr) throw formatSupabaseError(docsErr);
-    if (batchesErr) throw formatSupabaseError(batchesErr);
-    if (exitsErr) throw formatSupabaseError(exitsErr);
-    if (labErr) throw formatSupabaseError(labErr);
+    // Tolerate individual RLS-denied tables gracefully (e.g., Import Operator querying only Import tables)
+    const docs = !docsRes.error && Array.isArray(docsRes.data) ? docsRes.data.map(mapEntryDocFromDb) : [];
+    const batches = !batchesRes.error && Array.isArray(batchesRes.data) ? batchesRes.data.map(mapBatchFromDb) : [];
+    const exits = !exitsRes.error && Array.isArray(exitsRes.data) ? exitsRes.data.map(mapExitDocFromDb) : [];
+    const labRecords = !labRes.error && Array.isArray(labRes.data) ? labRes.data.map(mapLabRecordFromDb) : [];
+    const physicalExits =
+      !physRes.error && Array.isArray(physRes.data) ? physRes.data.map(mapPhysicalExitFromDb) : [];
+    const dailyTasks =
+      !tasksRes.error && Array.isArray(tasksRes.data) ? tasksRes.data.map(mapDailyTaskFromDb) : [];
+    const notificationStates =
+      !notifRes.error && Array.isArray(notifRes.data)
+        ? notifRes.data.map(mapNotificationStateFromDb)
+        : [];
 
-    // Fetch v4 extension tables gracefully so legacy DB projects still load
-    let physicalExits: PhysicalExitTransaction[] = [];
-    let dailyTasks: DailyTask[] = [];
-    let notificationStates: NotificationStateRecord[] = [];
-
-    const [physRes, tasksRes, notifRes] = await Promise.all([
-      supabase.from('physical_exits').select('*').order('created_at', { ascending: false }),
-      supabase.from('daily_tasks').select('*').order('created_at', { ascending: false }),
-      supabase.from('notification_states').select('*'),
-    ]);
-
-    if (!physRes.error && Array.isArray(physRes.data)) {
-      physicalExits = physRes.data.map(mapPhysicalExitFromDb);
-    }
-    if (!tasksRes.error && Array.isArray(tasksRes.data)) {
-      dailyTasks = tasksRes.data.map(mapDailyTaskFromDb);
-    }
-    if (!notifRes.error && Array.isArray(notifRes.data)) {
-      notificationStates = notifRes.data.map(mapNotificationStateFromDb);
-    }
-
-    const docs = (docsData || []).map(mapEntryDocFromDb);
-    const batches = (batchesData || []).map(mapBatchFromDb);
-    const exits = (exitsData || []).map(mapExitDocFromDb);
-    const labRecords = (labData || []).map(mapLabRecordFromDb);
-
+    const lookupData = !lookupRes.error ? lookupRes.data : null;
     const importers = Array.isArray(lookupData?.importers) ? lookupData.importers : [];
     const carriers = Array.isArray(lookupData?.carriers) ? lookupData.carriers : [];
     const goodsList = Array.isArray(lookupData?.goods_list) ? lookupData.goods_list : [];
@@ -457,229 +481,173 @@ export async function fetchAllDataFromCloud(): Promise<AllAppData | null> {
       brands,
     });
   } catch (err) {
-    const formatted = formatSupabaseError(err);
-    if ((formatted as any).isTableMissing) {
-      console.warn('Supabase DB notice (tables missing):', formatted.message);
-    } else if ((formatted as any).isNetworkError) {
-      console.warn('Supabase DB notice (offline/unreachable):', formatted.message);
-    } else {
-      console.warn('Supabase DB notice:', formatted.message);
-    }
-    throw formatted;
-  }
-}
-
-// Save or Update EntryDoc (falls back safely if new columns aren't migrated yet)
-export async function saveEntryDocCloud(doc: EntryDoc): Promise<void> {
-  const supabase = getSupabase();
-  if (!supabase) return;
-  try {
-    const row = mapEntryDocToDb(doc, false);
-    const { error } = await supabase.from('entry_docs').upsert(row);
-    if (error) {
-      const formatted = formatSupabaseError(error);
-      if ((formatted as any).isColumnMissing) {
-        const legacyRow = mapEntryDocToDb(doc, true);
-        const retry = await supabase.from('entry_docs').upsert(legacyRow);
-        if (retry.error) throw formatSupabaseError(retry.error);
-        console.warn('EntryDoc saved with legacy columns. Run latest SQL migration for mdf_thickness/clearance.');
-        return;
-      }
-      throw formatted;
-    }
-  } catch (err) {
     throw formatSupabaseError(err);
   }
 }
 
-// Delete EntryDoc
-export async function deleteEntryDocCloud(id: string): Promise<void> {
+export async function saveEntryDocCloud(doc: EntryDoc, companyId: string): Promise<void> {
   const supabase = getSupabase();
-  if (!supabase) return;
-  try {
-    const { error } = await supabase.from('entry_docs').delete().eq('id', id);
-    if (error) throw formatSupabaseError(error);
-  } catch (err) {
-    throw formatSupabaseError(err);
-  }
+  if (!supabase || !companyId) return;
+  const { error } = await supabase.from('entry_docs').upsert(mapEntryDocToDb(doc, companyId));
+  if (error) throw formatSupabaseError(error);
 }
 
-// Save or Update Batch
-export async function saveBatchCloud(batch: Batch): Promise<void> {
+export async function deleteEntryDocCloud(id: string, companyId: string): Promise<void> {
   const supabase = getSupabase();
-  if (!supabase) return;
-  try {
-    const row = mapBatchToDb(batch);
-    const { error } = await supabase.from('batches').upsert(row);
-    if (error) throw formatSupabaseError(error);
-  } catch (err) {
-    throw formatSupabaseError(err);
-  }
+  if (!supabase || !companyId) return;
+  const { error } = await supabase.from('entry_docs').delete().eq('id', id).eq('company_id', companyId);
+  if (error) throw formatSupabaseError(error);
 }
 
-// Delete Batch
-export async function deleteBatchCloud(id: string): Promise<void> {
+export async function saveBatchCloud(batch: Batch, companyId: string): Promise<void> {
   const supabase = getSupabase();
-  if (!supabase) return;
-  try {
-    const { error } = await supabase.from('batches').delete().eq('id', id);
-    if (error) throw formatSupabaseError(error);
-  } catch (err) {
-    throw formatSupabaseError(err);
-  }
+  if (!supabase || !companyId) return;
+  const { error } = await supabase.from('batches').upsert(mapBatchToDb(batch, companyId));
+  if (error) throw formatSupabaseError(error);
 }
 
-// Save or Update ExitDoc (falls back safely if new columns aren't migrated yet)
-export async function saveExitDocCloud(exit: ExitDoc): Promise<void> {
+export async function deleteBatchCloud(id: string, companyId: string): Promise<void> {
   const supabase = getSupabase();
-  if (!supabase) return;
-  try {
-    const row = mapExitDocToDb(exit, false);
-    const { error } = await supabase.from('exit_docs').upsert(row);
-    if (error) {
-      const formatted = formatSupabaseError(error);
-      if ((formatted as any).isColumnMissing) {
-        const legacyRow = mapExitDocToDb(exit, true);
-        const retry = await supabase.from('exit_docs').upsert(legacyRow);
-        if (retry.error) throw formatSupabaseError(retry.error);
-        console.warn('ExitDoc saved with legacy columns. Run latest SQL migration for partial_exit/entry_doc_id.');
-        return;
-      }
-      throw formatted;
-    }
-  } catch (err) {
-    throw formatSupabaseError(err);
-  }
+  if (!supabase || !companyId) return;
+  const { error } = await supabase.from('batches').delete().eq('id', id).eq('company_id', companyId);
+  if (error) throw formatSupabaseError(error);
 }
 
-// Delete ExitDoc
-export async function deleteExitDocCloud(id: string): Promise<void> {
+export async function saveExitDocCloud(exit: ExitDoc, companyId: string): Promise<void> {
   const supabase = getSupabase();
-  if (!supabase) return;
-  try {
-    const { error } = await supabase.from('exit_docs').delete().eq('id', id);
-    if (error) throw formatSupabaseError(error);
-  } catch (err) {
-    throw formatSupabaseError(err);
-  }
+  if (!supabase || !companyId) return;
+  const { error } = await supabase.from('exit_docs').upsert(mapExitDocToDb(exit, companyId));
+  if (error) throw formatSupabaseError(error);
 }
 
-// Save or Update LabRecord
-export async function saveLabRecordCloud(lab: LabRecord): Promise<void> {
+export async function deleteExitDocCloud(id: string, companyId: string): Promise<void> {
   const supabase = getSupabase();
-  if (!supabase) return;
-  try {
-    const row = mapLabRecordToDb(lab);
-    const { error } = await supabase.from('lab_records').upsert(row);
-    if (error) throw formatSupabaseError(error);
-  } catch (err) {
-    throw formatSupabaseError(err);
-  }
+  if (!supabase || !companyId) return;
+  const { error } = await supabase.from('exit_docs').delete().eq('id', id).eq('company_id', companyId);
+  if (error) throw formatSupabaseError(error);
 }
 
-// Delete LabRecord
-export async function deleteLabRecordCloud(id: string): Promise<void> {
+export async function saveLabRecordCloud(lab: LabRecord, companyId: string): Promise<void> {
   const supabase = getSupabase();
-  if (!supabase) return;
-  try {
-    const { error } = await supabase.from('lab_records').delete().eq('id', id);
-    if (error) throw formatSupabaseError(error);
-  } catch (err) {
-    throw formatSupabaseError(err);
-  }
+  if (!supabase || !companyId) return;
+  const { error } = await supabase.from('lab_records').upsert(mapLabRecordToDb(lab, companyId));
+  if (error) throw formatSupabaseError(error);
 }
 
-// Save or Update Physical Exit Transaction
-export async function savePhysicalExitCloud(tx: PhysicalExitTransaction): Promise<void> {
+export async function deleteLabRecordCloud(id: string, companyId: string): Promise<void> {
   const supabase = getSupabase();
-  if (!supabase) return;
-  try {
-    const row = mapPhysicalExitToDb(tx);
-    const { error } = await supabase.from('physical_exits').upsert(row);
-    if (error) throw formatSupabaseError(error);
-  } catch (err) {
-    throw formatSupabaseError(err);
-  }
+  if (!supabase || !companyId) return;
+  const { error } = await supabase.from('lab_records').delete().eq('id', id).eq('company_id', companyId);
+  if (error) throw formatSupabaseError(error);
 }
 
-export async function deletePhysicalExitCloud(id: string): Promise<void> {
+export async function savePhysicalExitCloud(tx: PhysicalExitTransaction, companyId: string): Promise<void> {
   const supabase = getSupabase();
-  if (!supabase) return;
-  try {
-    const { error } = await supabase.from('physical_exits').delete().eq('id', id);
-    if (error) throw formatSupabaseError(error);
-  } catch (err) {
-    throw formatSupabaseError(err);
-  }
+  if (!supabase || !companyId) return;
+  const { error } = await supabase.from('physical_exits').upsert(mapPhysicalExitToDb(tx, companyId));
+  if (error) throw formatSupabaseError(error);
 }
 
-// Save or Update Daily Task
-export async function saveDailyTaskCloud(task: DailyTask): Promise<void> {
+export async function deletePhysicalExitCloud(id: string, companyId: string): Promise<void> {
   const supabase = getSupabase();
-  if (!supabase) return;
-  try {
-    const row = mapDailyTaskToDb(task);
-    const { error } = await supabase.from('daily_tasks').upsert(row);
-    if (error) throw formatSupabaseError(error);
-  } catch (err) {
-    throw formatSupabaseError(err);
-  }
+  if (!supabase || !companyId) return;
+  const { error } = await supabase.from('physical_exits').delete().eq('id', id).eq('company_id', companyId);
+  if (error) throw formatSupabaseError(error);
 }
 
-export async function deleteDailyTaskCloud(id: string): Promise<void> {
+export async function saveDailyTaskCloud(task: DailyTask, companyId: string): Promise<void> {
   const supabase = getSupabase();
-  if (!supabase) return;
-  try {
-    const { error } = await supabase.from('daily_tasks').delete().eq('id', id);
-    if (error) throw formatSupabaseError(error);
-  } catch (err) {
-    throw formatSupabaseError(err);
-  }
+  if (!supabase || !companyId) return;
+  const { error } = await supabase.from('daily_tasks').upsert(mapDailyTaskToDb(task, companyId));
+  if (error) throw formatSupabaseError(error);
 }
 
-// Save Notification States
-export async function saveNotificationStatesCloud(states: NotificationStateRecord[]): Promise<void> {
+export async function deleteDailyTaskCloud(id: string, companyId: string): Promise<void> {
   const supabase = getSupabase();
-  if (!supabase || !states.length) return;
-  try {
-    const rows = states.map(mapNotificationStateToDb);
-    const { error } = await supabase.from('notification_states').upsert(rows);
-    if (error) throw formatSupabaseError(error);
-  } catch (err) {
-    throw formatSupabaseError(err);
-  }
+  if (!supabase || !companyId) return;
+  const { error } = await supabase.from('daily_tasks').delete().eq('id', id).eq('company_id', companyId);
+  if (error) throw formatSupabaseError(error);
 }
 
-// Save Lookup Options
-export async function saveLookupOptionsCloud(options: {
-  importers?: string[];
-  carriers?: string[];
-  goodsList?: string[];
-  brands?: string[];
-}): Promise<void> {
+export async function saveNotificationStatesCloud(
+  states: NotificationStateRecord[],
+  companyId: string
+): Promise<void> {
   const supabase = getSupabase();
-  if (!supabase) return;
-
-  try {
-    const payload: any = {
-      id: 'global_options',
-      updated_at: new Date().toISOString(),
-    };
-
-    if (options.importers !== undefined) payload.importers = options.importers;
-    if (options.carriers !== undefined) payload.carriers = options.carriers;
-    if (options.goodsList !== undefined) payload.goods_list = options.goodsList;
-    if (options.brands !== undefined) payload.brands = options.brands;
-
-    const { error } = await supabase.from('lookup_options').upsert(payload);
-    if (error) throw formatSupabaseError(error);
-  } catch (err) {
-    throw formatSupabaseError(err);
-  }
+  if (!supabase || !companyId || !states.length) return;
+  const rows = states.map((s) => mapNotificationStateToDb(s, companyId));
+  const { error } = await supabase
+    .from('notification_states')
+    .upsert(rows, { onConflict: 'company_id,dedupe_key' });
+  if (error) throw formatSupabaseError(error);
 }
 
-// Bulk Sync All Local Data to Cloud Database (Migration)
-export async function migrateLocalDataToCloud(localData: AllAppData): Promise<{
+export async function saveLookupOptionsCloud(
+  options: {
+    importers?: string[];
+    carriers?: string[];
+    goodsList?: string[];
+    brands?: string[];
+  },
+  companyId: string
+): Promise<void> {
+  const supabase = getSupabase();
+  if (!supabase || !companyId) return;
+
+  const payload: any = {
+    id: `options_${companyId}`,
+    company_id: companyId,
+    updated_at: new Date().toISOString(),
+  };
+
+  if (options.importers !== undefined) payload.importers = options.importers;
+  if (options.carriers !== undefined) payload.carriers = options.carriers;
+  if (options.goodsList !== undefined) payload.goods_list = options.goodsList;
+  if (options.brands !== undefined) payload.brands = options.brands;
+
+  const { error } = await supabase
+    .from('lookup_options')
+    .upsert(payload, { onConflict: 'company_id' });
+  if (error) throw formatSupabaseError(error);
+}
+
+export async function fetchCustomsLettersCloud(companyId: string): Promise<CustomsLetter[]> {
+  const supabase = getSupabase();
+  if (!supabase || !companyId) return [];
+  const { data, error } = await supabase
+    .from('customs_letters')
+    .select('*')
+    .eq('company_id', companyId)
+    .order('created_at', { ascending: false });
+  if (error) throw formatSupabaseError(error);
+  return (data || []).map(mapCustomsLetterFromDb);
+}
+
+export async function saveCustomsLetterCloud(letter: CustomsLetter, companyId: string): Promise<void> {
+  const supabase = getSupabase();
+  if (!supabase || !companyId) return;
+  const { error } = await supabase
+    .from('customs_letters')
+    .upsert(mapCustomsLetterToDb(letter, companyId));
+  if (error) throw formatSupabaseError(error);
+}
+
+export async function deleteCustomsLetterCloud(id: string, companyId: string): Promise<void> {
+  const supabase = getSupabase();
+  if (!supabase || !companyId) return;
+  const { error } = await supabase
+    .from('customs_letters')
+    .delete()
+    .eq('id', id)
+    .eq('company_id', companyId);
+  if (error) throw formatSupabaseError(error);
+}
+
+// Bulk Sync All Local Data to Cloud Database (strictly scoped to verified companyId)
+export async function migrateLocalDataToCloud(
+  localData: AllAppData,
+  scope: TenantQueryScope
+): Promise<{
   docsSynced: number;
   batchesSynced: number;
   exitsSynced: number;
@@ -689,6 +657,9 @@ export async function migrateLocalDataToCloud(localData: AllAppData): Promise<{
 }> {
   const supabase = getSupabase();
   if (!supabase) throw new Error('اتصال دیتابیس ابری برقرار نیست');
+  if (!scope.companyId) throw new Error('شناسه شرکت معتبر نیست');
+
+  const { companyId, enableImport = true, enableExport = true } = scope;
 
   let docsSynced = 0;
   let batchesSynced = 0;
@@ -697,91 +668,67 @@ export async function migrateLocalDataToCloud(localData: AllAppData): Promise<{
   let physicalExitsSynced = 0;
   let tasksSynced = 0;
 
-  try {
-    if (localData.docs && localData.docs.length > 0) {
-      const rows = localData.docs.map((d) => mapEntryDocToDb(d, false));
-      const { error } = await supabase.from('entry_docs').upsert(rows);
-      if (error) {
-        const formatted = formatSupabaseError(error);
-        if ((formatted as any).isColumnMissing) {
-          const legacyRows = localData.docs.map((d) => mapEntryDocToDb(d, true));
-          const retry = await supabase.from('entry_docs').upsert(legacyRows);
-          if (retry.error) throw formatSupabaseError(retry.error);
-        } else {
-          throw formatted;
-        }
-      }
-      docsSynced = rows.length;
-    }
-
-    if (localData.batches && localData.batches.length > 0) {
-      const rows = localData.batches.map(mapBatchToDb);
-      const { error } = await supabase.from('batches').upsert(rows);
-      if (error) throw formatSupabaseError(error);
-      batchesSynced = rows.length;
-    }
-
-    if (localData.exits && localData.exits.length > 0) {
-      const rows = localData.exits.map((x) => mapExitDocToDb(x, false));
-      const { error } = await supabase.from('exit_docs').upsert(rows);
-      if (error) {
-        const formatted = formatSupabaseError(error);
-        if ((formatted as any).isColumnMissing) {
-          const legacyRows = localData.exits.map((x) => mapExitDocToDb(x, true));
-          const retry = await supabase.from('exit_docs').upsert(legacyRows);
-          if (retry.error) throw formatSupabaseError(retry.error);
-        } else {
-          throw formatted;
-        }
-      }
-      exitsSynced = rows.length;
-    }
-
-    if (localData.labRecords && localData.labRecords.length > 0) {
-      const rows = localData.labRecords.map(mapLabRecordToDb);
-      const { error } = await supabase.from('lab_records').upsert(rows);
-      if (error) throw formatSupabaseError(error);
-      labSynced = rows.length;
-    }
-
-    if (localData.physicalExits && localData.physicalExits.length > 0) {
-      const rows = localData.physicalExits.map(mapPhysicalExitToDb);
-      const { error } = await supabase.from('physical_exits').upsert(rows);
-      if (!error) physicalExitsSynced = rows.length;
-      else if (!formatSupabaseError(error).message.includes('ساخته نشده')) {
-        console.warn('physical_exits sync warning:', error.message);
-      }
-    }
-
-    if (localData.dailyTasks && localData.dailyTasks.length > 0) {
-      const rows = localData.dailyTasks.map(mapDailyTaskToDb);
-      const { error } = await supabase.from('daily_tasks').upsert(rows);
-      if (!error) tasksSynced = rows.length;
-      else console.warn('daily_tasks sync warning:', error.message);
-    }
-
-    if (localData.notificationStates && localData.notificationStates.length > 0) {
-      const rows = localData.notificationStates.map(mapNotificationStateToDb);
-      const { error } = await supabase.from('notification_states').upsert(rows);
-      if (error) console.warn('notification_states sync warning:', error.message);
-    }
-
-    await saveLookupOptionsCloud({
-      importers: localData.importers,
-      carriers: localData.carriers,
-      goodsList: localData.goodsList,
-      brands: localData.brands,
-    });
-
-    return {
-      docsSynced,
-      batchesSynced,
-      exitsSynced,
-      labSynced,
-      physicalExitsSynced,
-      tasksSynced,
-    };
-  } catch (err) {
-    throw formatSupabaseError(err);
+  if (enableImport && localData.docs && localData.docs.length > 0) {
+    const rows = localData.docs.map((d) => mapEntryDocToDb(d, companyId));
+    const { error } = await supabase.from('entry_docs').upsert(rows);
+    if (!error) docsSynced = rows.length;
   }
+
+  if (enableImport && localData.batches && localData.batches.length > 0) {
+    const rows = localData.batches.map((b) => mapBatchToDb(b, companyId));
+    const { error } = await supabase.from('batches').upsert(rows);
+    if (!error) batchesSynced = rows.length;
+  }
+
+  if (enableExport && localData.exits && localData.exits.length > 0) {
+    const rows = localData.exits.map((x) => mapExitDocToDb(x, companyId));
+    const { error } = await supabase.from('exit_docs').upsert(rows);
+    if (!error) exitsSynced = rows.length;
+  }
+
+  if (enableExport && localData.labRecords && localData.labRecords.length > 0) {
+    const rows = localData.labRecords.map((l) => mapLabRecordToDb(l, companyId));
+    const { error } = await supabase.from('lab_records').upsert(rows);
+    if (!error) labSynced = rows.length;
+  }
+
+  if (enableExport && localData.physicalExits && localData.physicalExits.length > 0) {
+    const rows = localData.physicalExits.map((tx) => mapPhysicalExitToDb(tx, companyId));
+    const { error } = await supabase.from('physical_exits').upsert(rows);
+    if (!error) physicalExitsSynced = rows.length;
+  }
+
+  if (localData.dailyTasks && localData.dailyTasks.length > 0) {
+    const rows = localData.dailyTasks.map((t) => mapDailyTaskToDb(t, companyId));
+    const { error } = await supabase.from('daily_tasks').upsert(rows);
+    if (!error) tasksSynced = rows.length;
+  }
+
+  if (localData.notificationStates && localData.notificationStates.length > 0) {
+    const rows = localData.notificationStates.map((s) => mapNotificationStateToDb(s, companyId));
+    await supabase.from('notification_states').upsert(rows, { onConflict: 'company_id,dedupe_key' });
+  }
+
+  try {
+    await saveLookupOptionsCloud(
+      {
+        importers: localData.importers,
+        carriers: localData.carriers,
+        goodsList: localData.goodsList,
+        brands: localData.brands,
+      },
+      companyId
+    );
+  } catch {
+    // Non-fatal if user lacks lookup write permission (e.g. Report Viewer)
+  }
+
+  return {
+    docsSynced,
+    batchesSynced,
+    exitsSynced,
+    labSynced,
+    physicalExitsSynced,
+    tasksSynced,
+  };
 }

@@ -1,7 +1,9 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Navbar } from './components/Navbar';
 import { LoginGate, UserRole } from './components/LoginGate';
+import { CompanyOnboardingWizard } from './components/CompanyOnboardingWizard';
+import { CompanySettingsModal } from './components/CompanySettingsModal';
 import { ToastContainer, ToastMessage } from './components/Toast';
 import { ConfirmModal } from './components/ConfirmModal';
 import { PasswordModal } from './components/PasswordModal';
@@ -15,7 +17,6 @@ import { ReportsSection } from './components/ReportsSection';
 import { CustomsLettersSection } from './components/CustomsLettersSection';
 import { CommoditySummaryModal } from './components/CommoditySummaryModal';
 import { SecurityCenterModal } from './components/SecurityCenterModal';
-import { UserPermissionsModal, DEFAULT_FULL_PERMISSIONS, DEFAULT_VIEW_ONLY_PERMISSIONS } from './components/UserPermissionsModal';
 import { JalaliDatePicker } from './components/JalaliDatePicker';
 import { CloudDbSyncModal } from './components/CloudDbSyncModal';
 import { Clearance9010Drawer } from './components/Clearance9010Drawer';
@@ -29,7 +30,6 @@ import { useDeviceEnvironment } from './hooks/useDeviceEnvironment';
 import {
   initializeSecurity,
   getIdleTimeoutMinutes,
-  isUsingDefaultPasswords,
   clearSessionToken,
   logSecurityEvent,
 } from './utils/security';
@@ -45,19 +45,22 @@ import {
   ExitFilterType,
   JalaliDate,
   UserPermissions,
-  UserPermissionsMap,
   PhysicalExitTransaction,
   DailyTask,
   NotificationStateRecord,
   AppNotification,
+  WorkspaceContextData,
+  CompanyRole,
+  CompanyMember,
 } from './types';
 import {
   loadAllData,
+  loadEmptyData,
   saveAllData,
   clearAllTestData,
+  clearCompanyLocalCache,
   DEFAULT_IMPORTERS,
   DEFAULT_CARRIERS,
-  DEFAULT_GOODS,
   DEFAULT_BRANDS,
 } from './utils/storage';
 import { fa, uid, todayJ, en, j2d, d2j, jMonthLen } from './utils/jalali';
@@ -69,7 +72,15 @@ import {
   normalizeEntryClearance,
 } from './utils/clearance9010';
 import { generateNotifications, generateAutoFollowUpTasks, matchesTaskView } from './utils/workflowEngine';
-import { isSupabaseConfigured } from './lib/supabase';
+import { getSupabase, isSupabaseConfigured } from './lib/supabase';
+import { EMPTY_PERMISSIONS } from './utils/permissions';
+import {
+  fetchWorkspaceContext,
+  getSelectedCompanyId,
+  setSelectedCompanyId,
+  listCompanyRolesApi,
+  listCompanyUsersApi,
+} from './services/workspaceApi';
 import {
   fetchAllDataFromCloud,
   migrateLocalDataToCloud,
@@ -80,7 +91,6 @@ import {
   saveExitDocCloud,
   deleteExitDocCloud,
   saveLabRecordCloud,
-  deleteLabRecordCloud,
   savePhysicalExitCloud,
   deletePhysicalExitCloud,
   saveDailyTaskCloud,
@@ -96,18 +106,13 @@ import {
   FileSignature,
   Layers,
   FlaskConical,
-  Plus,
   Search,
-  Truck,
-  CheckCircle2,
-  Clock,
-  Layers3,
-  Lock,
   Calendar,
   X,
   ListFilter,
   PlusCircle,
   ShieldCheck,
+  Loader2,
 } from 'lucide-react';
 
 export default function App() {
@@ -127,19 +132,28 @@ export default function App() {
     setPreviewBypassed(true);
   };
 
-  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() => {
-    return sessionStorage.getItem('gm_auth') === '1';
-  });
+  // Multi-Tenant Auth & Workspace State
+  const [authView, setAuthView] = useState<'checking' | 'login' | 'onboarding' | 'ready'>('checking');
+  const [onboardingMode, setOnboardingMode] = useState<'create' | 'restart' | 'claim_legacy'>('create');
+  const [authExternalError, setAuthExternalError] = useState<string>('');
+  const [workspace, setWorkspace] = useState<WorkspaceContextData | null>(null);
+  const [wizardRoles, setWizardRoles] = useState<CompanyRole[]>([]);
+  const [wizardMembers, setWizardMembers] = useState<CompanyMember[]>([]);
+
+  const isAuthenticated = authView === 'ready' && Boolean(workspace);
+  const company = workspace?.company || null;
+  const companyId = company?.id || '';
+  const enableImport = company ? company.enableImport : false;
+  const enableExport = company ? company.enableExport : false;
 
   const [mainTab, setMainTab] = useState<MainTabType>('entry');
   const [entrySubTab, setEntrySubTab] = useState<EntrySubTab>('docs');
   const [exitSubTab, setExitSubTab] = useState<ExitSubTab>('docs');
 
-  // Cloud Sync Modal State
+  // Modals State
   const [isCloudDbModalOpen, setIsCloudDbModalOpen] = useState(false);
-
-  // Security Center Modal State
   const [isSecurityModalOpen, setIsSecurityModalOpen] = useState(false);
+  const [isCompanySettingsOpen, setIsCompanySettingsOpen] = useState(false);
 
   // Initialize Security layer on app launch
   useEffect(() => {
@@ -181,9 +195,9 @@ export default function App() {
   const [isCloudSyncing, setIsCloudSyncing] = useState<boolean>(false);
   const [isLoggingOut, setIsLoggingOut] = useState<boolean>(false);
 
-  // Silent background auto-save to Supabase every 15 seconds
+  // Silent background auto-save to Supabase every 15 seconds (tenant-scoped)
   useEffect(() => {
-    if (!isSupabaseConfigured()) return;
+    if (!isSupabaseConfigured() || !isAuthenticated || !companyId) return;
 
     const interval = setInterval(() => {
       setIsCloudSyncing(true);
@@ -200,7 +214,7 @@ export default function App() {
         goodsList,
         brands,
       };
-      migrateLocalDataToCloud(currentAppData)
+      migrateLocalDataToCloud(currentAppData, { companyId, enableImport, enableExport })
         .then(() => {
           setLastCloudSyncTime(new Date());
         })
@@ -213,11 +227,27 @@ export default function App() {
     }, 15000);
 
     return () => clearInterval(interval);
-  }, [docs, batches, exits, labRecords, physicalExits, dailyTasks, notificationStates, importers, carriers, goodsList, brands]);
+  }, [
+    isAuthenticated,
+    companyId,
+    enableImport,
+    enableExport,
+    docs,
+    batches,
+    exits,
+    labRecords,
+    physicalExits,
+    dailyTasks,
+    notificationStates,
+    importers,
+    carriers,
+    goodsList,
+    brands,
+  ]);
 
-  // Manual cloud sync triggered by user button
+  // Manual cloud sync triggered by user button (tenant-scoped)
   const handleManualCloudSync = async () => {
-    if (!isSupabaseConfigured()) {
+    if (!isSupabaseConfigured() || !companyId) {
       addToast('دیتابیس ابری متصل نیست. لطفاً ابتدا از بخش تنظیمات اتصال را برقرار نمایید.', 'err');
       return;
     }
@@ -236,7 +266,7 @@ export default function App() {
       brands,
     };
     try {
-      await migrateLocalDataToCloud(currentAppData);
+      await migrateLocalDataToCloud(currentAppData, { companyId, enableImport, enableExport });
       setLastCloudSyncTime(new Date());
       addToast('تمامی تغییرات و اسناد ثبت‌شده با موفقیت در دیتابیس ابری همگام‌سازی و ذخیره شدند.', 'ok');
     } catch (err: any) {
@@ -316,16 +346,52 @@ export default function App() {
 
   const [isSummaryModalOpen, setIsSummaryModalOpen] = useState(false);
 
-  // Load Initial Data on Mount (Cloud Database First, Fallback to localStorage)
-  useEffect(() => {
-    const initData = async () => {
-      // 1. Load local data first for instant UI response
-      const localData = loadAllData();
-      setDocs(localData.docs);
-      setBatches(localData.batches);
-      setExits(localData.exits);
-      setLabRecords(localData.labRecords);
-      setPhysicalExits(localData.physicalExits);
+  const addToast = useCallback((text: string, type: 'ok' | 'err' | 'info' = 'info') => {
+    const newToast: ToastMessage = {
+      id: uid(),
+      text,
+      type,
+    };
+    setToasts((prev) => [...prev, newToast]);
+    setTimeout(() => {
+      setToasts((prev) => prev.filter((t) => t.id !== newToast.id));
+    }, 3500);
+  }, []);
+
+  const removeToast = (id: string) => {
+    setToasts((prev) => prev.filter((t) => t.id !== id));
+  };
+
+  const resetInMemoryTenantData = useCallback(() => {
+    const empty = loadEmptyData();
+    setDocs(empty.docs);
+    setBatches(empty.batches);
+    setExits(empty.exits);
+    setLabRecords(empty.labRecords);
+    setPhysicalExits(empty.physicalExits);
+    setDailyTasks(empty.dailyTasks);
+    setNotificationStates(empty.notificationStates);
+    setImporters(empty.importers);
+    setCarriers(empty.carriers);
+    setGoodsList(empty.goodsList);
+    setBrands(empty.brands);
+    setEditingDoc(null);
+    setEditingExitDoc(null);
+    setClearanceDrawerDocId(null);
+    dataLoadedRef.current = false;
+  }, []);
+
+  // Load Tenant Data from company-scoped cache & Supabase Cloud DB
+  const loadTenantData = useCallback(
+    async (targetCompanyId: string, impEnabled: boolean, expEnabled: boolean) => {
+      if (!targetCompanyId) return;
+      // 1. Load company-scoped local cache for instant paint
+      const localData = loadAllData(targetCompanyId);
+      setDocs(impEnabled ? localData.docs : []);
+      setBatches(impEnabled ? localData.batches : []);
+      setExits(expEnabled ? localData.exits : []);
+      setLabRecords(expEnabled ? localData.labRecords : []);
+      setPhysicalExits(expEnabled ? localData.physicalExits : []);
       setDailyTasks(localData.dailyTasks);
       setNotificationStates(localData.notificationStates);
       setImporters(localData.importers);
@@ -334,10 +400,14 @@ export default function App() {
       setBrands(localData.brands);
       dataLoadedRef.current = true;
 
-      // 2. If Supabase is configured, fetch latest data from Cloud DB
+      // 2. Fetch authoritative tenant data from Supabase (protected by RLS)
       if (isSupabaseConfigured()) {
         try {
-          const cloudData = await fetchAllDataFromCloud();
+          const cloudData = await fetchAllDataFromCloud({
+            companyId: targetCompanyId,
+            enableImport: impEnabled,
+            enableExport: expEnabled,
+          });
           if (cloudData) {
             setDocs(cloudData.docs);
             setBatches(cloudData.batches);
@@ -350,165 +420,202 @@ export default function App() {
             setCarriers(cloudData.carriers);
             setGoodsList(cloudData.goodsList);
             setBrands(cloudData.brands);
-            // Sync to local cache
-            saveAllData({
-              docs: cloudData.docs,
-              batches: cloudData.batches,
-              exits: cloudData.exits,
-              labRecords: cloudData.labRecords,
-              physicalExits: cloudData.physicalExits || [],
-              dailyTasks: cloudData.dailyTasks || [],
-              notificationStates: cloudData.notificationStates || [],
-              importers: cloudData.importers,
-              carriers: cloudData.carriers,
-              goodsList: cloudData.goodsList,
-              brands: cloudData.brands,
-            });
+            setLastCloudSyncTime(new Date());
+            saveAllData(
+              {
+                docs: cloudData.docs,
+                batches: cloudData.batches,
+                exits: cloudData.exits,
+                labRecords: cloudData.labRecords,
+                physicalExits: cloudData.physicalExits || [],
+                dailyTasks: cloudData.dailyTasks || [],
+                notificationStates: cloudData.notificationStates || [],
+                importers: cloudData.importers,
+                carriers: cloudData.carriers,
+                goodsList: cloudData.goodsList,
+                brands: cloudData.brands,
+              },
+              targetCompanyId
+            );
           }
         } catch (err: any) {
-          if (err?.code === 'PGRST205' || err?.isTableMissing || err?.message?.includes('PGRST205') || err?.message?.includes('جداول دیتابیس')) {
-            console.warn('Supabase tables not found (PGRST205). Database schema needs to be executed in Supabase SQL Editor.');
+          if (
+            err?.code === 'PGRST205' ||
+            err?.isTableMissing ||
+            err?.message?.includes('PGRST205') ||
+            err?.message?.includes('جداول دیتابیس')
+          ) {
             addToast(
               'جداول دیتابیس ابری در Supabase ساخته نشده‌اند. لطفاً از بخش «دیتابیس ابری»، اسکریپت SQL را کپی و اجرا نمایید.',
               'err'
             );
           } else if (err?.isNetworkError || err?.code === 'NETWORK_ERROR') {
-            console.warn('Supabase host is currently unreachable. Continuing with local storage cache.');
+            console.warn('Supabase host is currently unreachable. Continuing with company local cache.');
           } else {
-            console.warn('Could not load initial data from Supabase, falling back to local cache:', err?.message || err);
+            console.warn('Could not load tenant data from Supabase:', err?.message || err);
           }
         }
       }
-    };
+    },
+    [addToast]
+  );
 
-    initData();
-  }, []);
-
-  const addToast = (text: string, type: 'ok' | 'err' | 'info' = 'info') => {
-    const newToast: ToastMessage = {
-      id: uid(),
-      text,
-      type,
-    };
-    setToasts((prev) => [...prev, newToast]);
-    setTimeout(() => {
-      setToasts((prev) => prev.filter((t) => t.id !== newToast.id));
-    }, 3500);
-  };
-
-  const removeToast = (id: string) => {
-    setToasts((prev) => prev.filter((t) => t.id !== id));
-  };
-
-  const [userRole, setUserRole] = useState<UserRole>(() => {
-    return (sessionStorage.getItem('gm_role') as UserRole) || 'admin';
-  });
-
-  const [currentUser, setCurrentUser] = useState<string>(() => {
-    return sessionStorage.getItem('gm_user') || (userRole === 'admin' ? 'مدیر' : 'بازدیدکننده');
-  });
-
-  // Sync currentUser and userRole directly with sessionStorage
-  useEffect(() => {
-    if (isAuthenticated) {
-      const storedRole = (sessionStorage.getItem('gm_role') as UserRole) || 'admin';
-      const storedUser = sessionStorage.getItem('gm_user') || (storedRole === 'admin' ? 'مدیر' : 'بازدیدکننده');
-      if (storedRole !== userRole) setUserRole(storedRole);
-      if (storedUser !== currentUser) setCurrentUser(storedUser);
-    } else {
-      if (currentUser !== '') setCurrentUser('');
-    }
-  }, [isAuthenticated, currentUser, userRole]);
-
-  const [isPermissionsModalOpen, setIsPermissionsModalOpen] = useState(false);
-
-  const [activeOperator, setActiveOperator] = useState<'نظری' | 'یوسفی' | 'افسر'>(() => {
-    const saved = sessionStorage.getItem('gm_operator');
-    return saved === 'یوسفی' || saved === 'افسر' ? saved : 'نظری';
-  });
-
-  const [permissionsMap, setPermissionsMap] = useState<UserPermissionsMap>(() => {
-    const saved = localStorage.getItem('gm_user_permissions');
-    if (saved) {
-      try {
-        return JSON.parse(saved);
-      } catch (e) {
-        console.error(e);
+  // Resolve authenticated user's company workspace from server API
+  const refreshWorkspace = useCallback(
+    async (overrideCompanyId?: string | null) => {
+      const supabase = getSupabase();
+      if (!supabase) {
+        setWorkspace(null);
+        setAuthView('login');
+        return;
       }
-    }
-    return {
-      'نظری': { ...DEFAULT_FULL_PERMISSIONS },
-      'یوسفی': { ...DEFAULT_FULL_PERMISSIONS, canConfirmSata: false, canCloseCase: false, canModifyCompletedExits: false },
-      'افسر': { ...DEFAULT_FULL_PERMISSIONS, canConfirmSata: false, canCloseCase: false, canModifyCompletedExits: false },
-    };
-  });
 
-  // Active Permissions: Visitor (54321) stays View-Only.
-  // Admin (12345) resolves against activeOperator ('نظری' has full unrestricted perms; 'یوسفی'/'افسر' obey UserPermissionsModal).
-  const activePermissions: UserPermissions = React.useMemo(() => {
-    if (userRole === 'viewer') {
-      return {
-        ...DEFAULT_VIEW_ONLY_PERMISSIONS,
-        canViewEntry: true,
-        canViewConsolidation: true,
-        canViewExit: true,
-        canViewReports: true,
-        canViewAnalytics: true,
-        canViewSummaryModal: true,
-        canViewLetters: true,
-      };
-    }
+      const { data: sessionData } = await supabase.auth.getSession();
+      if (!sessionData.session) {
+        setWorkspace(null);
+        resetInMemoryTenantData();
+        setAuthView('login');
+        return;
+      }
 
-    if (activeOperator === 'نظری') {
-      return { ...DEFAULT_FULL_PERMISSIONS };
-    }
+      try {
+        const ctx = await fetchWorkspaceContext(overrideCompanyId ?? getSelectedCompanyId());
+        setWorkspace(ctx);
+        setSelectedCompanyId(ctx.company.id);
+        setAuthExternalError('');
 
-    return {
-      ...DEFAULT_FULL_PERMISSIONS,
-      ...(permissionsMap[activeOperator] || {}),
-    };
-  }, [userRole, activeOperator, permissionsMap]);
+        if (!ctx.company.onboardingCompleted) {
+          if (ctx.member.isOwner) {
+            try {
+              const [rolesRes, usersRes] = await Promise.all([
+                listCompanyRolesApi().catch(() => ({ roles: [] })),
+                listCompanyUsersApi().catch(() => ({ members: [] })),
+              ]);
+              setWizardRoles(rolesRes.roles || []);
+              setWizardMembers(usersRes.members || []);
+            } catch {
+              // fallback to defaults inside wizard
+            }
+            setOnboardingMode('restart');
+            setAuthView('onboarding');
+          } else {
+            setAuthExternalError(
+              'راه‌اندازی اولیه شرکت شما هنوز توسط مالک شرکت تکمیل نشده است. لطفاً با مدیر سیستم تماس بگیرید.'
+            );
+            await supabase.auth.signOut().catch(() => {});
+            setWorkspace(null);
+            setAuthView('login');
+          }
+          return;
+        }
 
-  const activeOperatorLabel = userRole === 'viewer' ? 'ناظر (فقط مشاهده)' : activeOperator;
+        setAuthView('ready');
+        await loadTenantData(ctx.company.id, ctx.company.enableImport, ctx.company.enableExport);
+      } catch (err: any) {
+        console.warn('Workspace resolution failed:', err?.message || err);
+        const status = err?.status;
+        if (status === 401 || status === 403) {
+          setAuthExternalError(
+            err?.message || 'حساب کاربری شما غیرفعال است یا به هیچ شرکتی متصل نشده است.'
+          );
+          await supabase.auth.signOut().catch(() => {});
+          setSelectedCompanyId(null);
+          setWorkspace(null);
+          resetInMemoryTenantData();
+          setAuthView('login');
+        } else {
+          setAuthExternalError(err?.message || 'خطا در اتصال به سرور فضای کاری.');
+          setAuthView('login');
+        }
+      }
+    },
+    [loadTenantData, resetInMemoryTenantData]
+  );
 
-  const handleSwitchOperator = (targetOp: 'نظری' | 'یوسفی' | 'افسر') => {
-    if (targetOp === activeOperator) return;
-    if (targetOp === 'نظری' && activeOperator !== 'نظری') {
-      setPassModal({
-        isOpen: true,
-        message: 'برای بازگشت به پروفایل مدیر ارشد (نظری)، رمز مدیریت را وارد کنید.',
-        action: () => {
-          setActiveOperator('نظری');
-          sessionStorage.setItem('gm_operator', 'نظری');
-          sessionStorage.setItem('gm_user', 'نظری');
-          setCurrentUser('نظری');
-          setPassModal((prev) => ({ ...prev, isOpen: false }));
-          addToast('اپراتور فعال به «نظری» تغییر یافت', 'ok');
-        },
-      });
-      return;
-    }
-
-    setActiveOperator(targetOp);
-    sessionStorage.setItem('gm_operator', targetOp);
-    sessionStorage.setItem('gm_user', targetOp);
-    setCurrentUser(targetOp);
-    addToast(`اپراتور فعال به «${targetOp}» تغییر یافت و سطوح دسترسی ایشان اعمال شد`, 'info');
-  };
-
-  // Ensure active tab matches permissions when user switches
+  // Bootstrap Supabase Auth session on mount & listen to session changes
   useEffect(() => {
-    if (mainTab === 'entry' && !activePermissions.canViewEntry) {
-      if (activePermissions.canViewExit) setMainTab('exit');
-      else if (activePermissions.canViewReports) setMainTab('reports');
-    } else if (mainTab === 'exit' && !activePermissions.canViewExit) {
-      if (activePermissions.canViewEntry) setMainTab('entry');
-      else if (activePermissions.canViewReports) setMainTab('reports');
-    } else if (mainTab === 'reports' && !activePermissions.canViewReports) {
-      if (activePermissions.canViewEntry) setMainTab('entry');
-      else if (activePermissions.canViewExit) setMainTab('exit');
+    refreshWorkspace();
+    const supabase = getSupabase();
+    if (!supabase) return;
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((event) => {
+      if (event === 'SIGNED_OUT') {
+        setWorkspace(null);
+        setSelectedCompanyId(null);
+        resetInMemoryTenantData();
+        setAuthView('login');
+      }
+    });
+    return () => subscription.unsubscribe();
+  }, [refreshWorkspace, resetInMemoryTenantData]);
+
+  // Derived Role, Label & Effective Permissions (strictly module-aware + RBAC-enforced)
+  const activePermissions: UserPermissions = React.useMemo(() => {
+    if (!workspace) return { ...EMPTY_PERMISSIONS };
+    return workspace.effectivePermissions;
+  }, [workspace]);
+
+  const userRole: UserRole = React.useMemo(() => {
+    if (!workspace) return 'viewer';
+    const hasAnyWrite =
+      workspace.member.isOwner ||
+      activePermissions.canCreateEntry ||
+      activePermissions.canEditEntry ||
+      activePermissions.canCreateBatch ||
+      activePermissions.canCreateExit ||
+      activePermissions.canUpdateExitStages ||
+      activePermissions.canCreateLab ||
+      activePermissions.canManageLetters ||
+      activePermissions.canManageTasks ||
+      activePermissions.canManageCompanySettings ||
+      activePermissions.canManageUsers;
+    return hasAnyWrite ? 'admin' : 'viewer';
+  }, [workspace, activePermissions]);
+
+  const currentUser = workspace?.member.fullName || '';
+  const activeOperatorLabel = workspace
+    ? `${workspace.member.fullName} (${workspace.role.name})`
+    : 'کاربر';
+
+  const canOpenCompanySettings = Boolean(
+    workspace &&
+      (workspace.member.isOwner ||
+        activePermissions.canManageCompanySettings ||
+        activePermissions.canManageUsers ||
+        activePermissions.canManageRoles)
+  );
+
+  // Ensure active tab always matches enabled company operations & user permissions
+  useEffect(() => {
+    if (!isAuthenticated) return;
+    const canEntry = enableImport && activePermissions.canViewEntry;
+    const canExit = enableExport && activePermissions.canViewExit;
+    const canReports = activePermissions.canViewReports;
+    const canLetters = activePermissions.canViewLetters !== false;
+
+    if (mainTab === 'entry' && !canEntry) {
+      if (canExit) setMainTab('exit');
+      else if (canReports) setMainTab('reports');
+      else if (canLetters) setMainTab('letters');
+    } else if (mainTab === 'exit' && !canExit) {
+      if (canEntry) setMainTab('entry');
+      else if (canReports) setMainTab('reports');
+      else if (canLetters) setMainTab('letters');
+    } else if (mainTab === 'reports' && !canReports) {
+      if (canEntry) setMainTab('entry');
+      else if (canExit) setMainTab('exit');
+      else if (canLetters) setMainTab('letters');
+    } else if (mainTab === 'letters' && !canLetters) {
+      if (canEntry) setMainTab('entry');
+      else if (canExit) setMainTab('exit');
+      else if (canReports) setMainTab('reports');
     }
-  }, [currentUser, activePermissions, mainTab]);
+
+    if (exitSubTab === 'lab' && !activePermissions.canViewLab) {
+      setExitSubTab('docs');
+    }
+  }, [isAuthenticated, enableImport, enableExport, activePermissions, mainTab, exitSubTab]);
 
   // If viewport widens to desktop/tablet while mobile-only 'tools' tab is active, fall back cleanly
   useEffect(() => {
@@ -516,8 +623,8 @@ export default function App() {
     const mq = window.matchMedia('(min-width: 768px)');
     const fallbackIfDesktop = () => {
       if (mq.matches) {
-        if (activePermissions.canViewEntry) setMainTab('entry');
-        else if (activePermissions.canViewExit) setMainTab('exit');
+        if (enableImport && activePermissions.canViewEntry) setMainTab('entry');
+        else if (enableExport && activePermissions.canViewExit) setMainTab('exit');
         else if (activePermissions.canViewReports) setMainTab('reports');
         else setMainTab('letters');
       }
@@ -525,46 +632,79 @@ export default function App() {
     fallbackIfDesktop();
     mq.addEventListener('change', fallbackIfDesktop);
     return () => mq.removeEventListener('change', fallbackIfDesktop);
-  }, [mainTab, activePermissions]);
+  }, [mainTab, enableImport, enableExport, activePermissions]);
 
-  const handleSavePermissions = (updatedMap: UserPermissionsMap) => {
-    setPermissionsMap(updatedMap);
-    localStorage.setItem('gm_user_permissions', JSON.stringify(updatedMap));
-    addToast('سطوح دسترسی کاربران با موفقیت بروزرسانی گردید.', 'ok');
+  const handleLoginSuccess = async () => {
+    setAuthExternalError('');
+    setAuthView('checking');
+    await refreshWorkspace();
+    addToast('خوش آمدید', 'ok');
   };
 
-  const handleLoginSuccess = (role: UserRole) => {
-    const roleName = role === 'admin' ? 'مدیر' : 'بازدیدکننده';
-    sessionStorage.setItem('gm_auth', '1');
-    sessionStorage.setItem('gm_role', role);
-    sessionStorage.setItem('gm_user', roleName);
-    setUserRole(role);
-    setCurrentUser(roleName);
-    setIsAuthenticated(true);
-    addToast('خوش آمدید', 'ok');
+  const handleStartOnboarding = (mode: 'create' | 'claim_legacy') => {
+    setAuthExternalError('');
+    setWizardRoles([]);
+    setWizardMembers([]);
+    setOnboardingMode(mode);
+    setAuthView('onboarding');
+  };
+
+  const handleLaunchRestartWizard = async () => {
+    if (!workspace?.member.isOwner) {
+      addToast('فقط مالک شرکت می‌تواند ویزارد راه‌اندازی مجدد را اجرا کند.', 'err');
+      return;
+    }
+    try {
+      const [rolesRes, usersRes] = await Promise.all([
+        listCompanyRolesApi().catch(() => ({ roles: [] })),
+        listCompanyUsersApi().catch(() => ({ members: [] })),
+      ]);
+      setWizardRoles(rolesRes.roles || []);
+      setWizardMembers(usersRes.members || []);
+    } catch {
+      // proceed with existing workspace state
+    }
+    setOnboardingMode('restart');
+    setAuthView('onboarding');
+  };
+
+  const handleSwitchCompany = async (nextCompanyId: string) => {
+    if (!nextCompanyId || nextCompanyId === companyId) return;
+    setSelectedCompanyId(nextCompanyId);
+    resetInMemoryTenantData();
+    setAuthView('checking');
+    await refreshWorkspace(nextCompanyId);
+    addToast('فضای کاری شرکت تغییر یافت.', 'ok');
   };
 
   const handleLogout = () => {
     logSecurityEvent({
       type: 'logout',
       user: currentUser || 'کاربر',
-      role: userRole,
-      description: 'خروج کاربر و بستن گیت‌های راهبند',
+      role: workspace?.role.name || userRole,
+      description: 'خروج کاربر از فضای کاری شرکت',
       severity: 'info',
     });
     clearSessionToken();
     setIsLoggingOut(true);
   };
 
-  const handleLogoutComplete = () => {
-    sessionStorage.removeItem('gm_auth');
-    sessionStorage.removeItem('gm_role');
-    sessionStorage.removeItem('gm_user');
+  const handleLogoutComplete = async () => {
+    const prevCompanyId = companyId;
+    const supabase = getSupabase();
+    if (supabase) {
+      await supabase.auth.signOut().catch(() => {});
+    }
+    if (prevCompanyId) {
+      clearCompanyLocalCache(prevCompanyId);
+    }
+    setSelectedCompanyId(null);
     clearSessionToken();
-    setCurrentUser('');
-    setUserRole('admin');
-    setIsAuthenticated(false);
+    setWorkspace(null);
+    resetInMemoryTenantData();
+    setIsCompanySettingsOpen(false);
     setIsLoggingOut(false);
+    setAuthView('login');
   };
 
   // Inactivity Auto-Lock Hook (قفل خودکار بر اثر عدم فعالیت)
@@ -572,32 +712,36 @@ export default function App() {
     if (!isAuthenticated) return;
 
     let timeoutId: any = null;
-
     let lastActivityTime = 0;
+
     const resetIdleTimer = () => {
       const now = Date.now();
-      // Throttle idle timer reset to at most once every 1500ms to keep 60-120fps smooth scrolling
       if (now - lastActivityTime < 1500) return;
       lastActivityTime = now;
 
       if (timeoutId) clearTimeout(timeoutId);
       const minutes = getIdleTimeoutMinutes();
-      if (minutes <= 0) return; // Auto-lock disabled
+      if (minutes <= 0) return;
 
-      timeoutId = setTimeout(() => {
+      timeoutId = setTimeout(async () => {
         logSecurityEvent({
           type: 'auto_lock',
           user: currentUser || 'کاربر',
-          role: userRole,
+          role: workspace?.role.name || userRole,
           description: `قفل خودکار سامانه به دلیل ${fa(minutes)} دقیقه بی‌کاری`,
           severity: 'warning',
         });
+        const supabase = getSupabase();
+        if (supabase) {
+          await supabase.auth.signOut().catch(() => {});
+        }
+        if (companyId) clearCompanyLocalCache(companyId);
+        setSelectedCompanyId(null);
         clearSessionToken();
-        sessionStorage.removeItem('gm_auth');
-        sessionStorage.removeItem('gm_role');
-        sessionStorage.removeItem('gm_user');
-        setIsAuthenticated(false);
-        addToast('نشست کاری شما به دلیل عدم فعالیت جهت حفظ امنیت سیستم قفل شد.', 'info');
+        setWorkspace(null);
+        resetInMemoryTenantData();
+        setAuthView('login');
+        addToast('نشست کاری شما به دلیل عدم فعالیت جهت حفظ امنیت سیستم بسته شد.', 'info');
       }, minutes * 60 * 1000);
     };
 
@@ -609,45 +753,29 @@ export default function App() {
       if (timeoutId) clearTimeout(timeoutId);
       activityEvents.forEach((evt) => window.removeEventListener(evt, resetIdleTimer));
     };
-  }, [isAuthenticated, currentUser, userRole]);
+  }, [isAuthenticated, currentUser, workspace?.role.name, userRole, companyId, resetInMemoryTenantData, addToast]);
 
   const handleClearAllData = () => {
     if (userRole === 'viewer' || !activePermissions.canDeleteItems) {
-      addToast('کاربران ناظر دسترسی پاکسازی اطلاعات را ندارند.', 'err');
+      addToast('شما دسترسی پاکسازی اطلاعات را ندارید.', 'err');
       return;
     }
-    setPassModal({
+    setConfirmModal({
       isOpen: true,
-      message: 'هشدار امنیتی: برای پاکسازی تمامی اطلاعات سامانه، رمز مدیریت را وارد نمایید.',
+      title: 'پاکسازی حافظه محلی شرکت',
+      text: 'آیا از پاکسازی حافظه محلی این دستگاه برای شرکت فعلی اطمینان دارید؟ داده‌های ذخیره شده در سرور ابری با همگام‌سازی بعدی مجدداً دریافت می‌شوند.',
       action: () => {
-        setPassModal((prev) => ({ ...prev, isOpen: false }));
-        setConfirmModal({
-          isOpen: true,
-          title: 'پاکسازی تمام داده‌های تستی',
-          text: 'آیا از حذف تمامی اسناد ورود، تجمیع‌ها، اسناد خروج و سوابق آزمایشگاه اطمینان دارید؟ این عمل غیرقابل بازگشت است.',
-          action: () => {
-            clearAllTestData();
-            setDocs([]);
-            setBatches([]);
-            setExits([]);
-            setLabRecords([]);
-            setPhysicalExits([]);
-            setDailyTasks([]);
-            setNotificationStates([]);
-            setEditingDoc(null);
-            setEditingExitDoc(null);
-            setClearanceDrawerDocId(null);
-            setConfirmModal({ isOpen: false, title: '', text: '', action: () => {} });
-            logSecurityEvent({
-              type: 'data_cleared',
-              user: currentUser || 'مدیر',
-              role: userRole,
-              description: 'تمامی داده‌های تستی توسط مدیر پاکسازی شدند',
-              severity: 'warning',
-            });
-            addToast('تمامی داده‌های تستی با موفقیت پاکسازی شدند.', 'ok');
-          },
+        clearAllTestData(companyId);
+        resetInMemoryTenantData();
+        setConfirmModal({ isOpen: false, title: '', text: '', action: () => {} });
+        logSecurityEvent({
+          type: 'data_cleared',
+          user: currentUser || 'مدیر',
+          role: workspace?.role.name || userRole,
+          description: 'حافظه محلی شرکت پاکسازی شد',
+          severity: 'warning',
         });
+        addToast('حافظه محلی با موفقیت پاکسازی شد.', 'ok');
       },
     });
   };
@@ -694,14 +822,14 @@ export default function App() {
     });
   }, [docs, batches]);
 
-  // Option additions
+  // Option additions (tenant-scoped)
   const handleAddImporter = (name: string) => {
     if (!importers.includes(name)) {
       const next = [...importers, name];
       setImporters(next);
-      saveAllData({ importers: next });
-      if (isSupabaseConfigured()) {
-        saveLookupOptionsCloud({ importers: next }).catch((err) =>
+      saveAllData({ importers: next }, companyId);
+      if (isSupabaseConfigured() && companyId) {
+        saveLookupOptionsCloud({ importers: next }, companyId).catch((err) =>
           console.warn('Supabase sync notice (importers):', err?.message || err)
         );
       }
@@ -712,9 +840,9 @@ export default function App() {
     if (!carriers.includes(name)) {
       const next = [...carriers, name];
       setCarriers(next);
-      saveAllData({ carriers: next });
-      if (isSupabaseConfigured()) {
-        saveLookupOptionsCloud({ carriers: next }).catch((err) =>
+      saveAllData({ carriers: next }, companyId);
+      if (isSupabaseConfigured() && companyId) {
+        saveLookupOptionsCloud({ carriers: next }, companyId).catch((err) =>
           console.warn('Supabase sync notice (carriers):', err?.message || err)
         );
       }
@@ -725,9 +853,9 @@ export default function App() {
     if (!goodsList.includes(name)) {
       const next = [...goodsList, name];
       setGoodsList(next);
-      saveAllData({ goodsList: next });
-      if (isSupabaseConfigured()) {
-        saveLookupOptionsCloud({ goodsList: next }).catch((err) =>
+      saveAllData({ goodsList: next }, companyId);
+      if (isSupabaseConfigured() && companyId) {
+        saveLookupOptionsCloud({ goodsList: next }, companyId).catch((err) =>
           console.warn('Supabase sync notice (goods):', err?.message || err)
         );
       }
@@ -738,22 +866,22 @@ export default function App() {
     if (!brands.includes(name)) {
       const next = [...brands, name];
       setBrands(next);
-      saveAllData({ brands: next });
-      if (isSupabaseConfigured()) {
-        saveLookupOptionsCloud({ brands: next }).catch((err) =>
+      saveAllData({ brands: next }, companyId);
+      if (isSupabaseConfigured() && companyId) {
+        saveLookupOptionsCloud({ brands: next }, companyId).catch((err) =>
           console.warn('Supabase sync notice (brands):', err?.message || err)
         );
       }
     }
   };
 
-  // Option Deletions
+  // Option Deletions (tenant-scoped)
   const handleDeleteImporter = (name: string) => {
     const next = importers.filter((item) => item !== name);
     setImporters(next);
-    saveAllData({ importers: next });
-    if (isSupabaseConfigured()) {
-      saveLookupOptionsCloud({ importers: next }).catch((err) =>
+    saveAllData({ importers: next }, companyId);
+    if (isSupabaseConfigured() && companyId) {
+      saveLookupOptionsCloud({ importers: next }, companyId).catch((err) =>
         console.warn('Supabase sync notice (importers):', err?.message || err)
       );
     }
@@ -762,9 +890,9 @@ export default function App() {
   const handleDeleteCarrier = (name: string) => {
     const next = carriers.filter((item) => item !== name);
     setCarriers(next);
-    saveAllData({ carriers: next });
-    if (isSupabaseConfigured()) {
-      saveLookupOptionsCloud({ carriers: next }).catch((err) =>
+    saveAllData({ carriers: next }, companyId);
+    if (isSupabaseConfigured() && companyId) {
+      saveLookupOptionsCloud({ carriers: next }, companyId).catch((err) =>
         console.warn('Supabase sync notice (carriers):', err?.message || err)
       );
     }
@@ -773,9 +901,9 @@ export default function App() {
   const handleDeleteGoods = (name: string) => {
     const next = goodsList.filter((item) => item !== name);
     setGoodsList(next);
-    saveAllData({ goodsList: next });
-    if (isSupabaseConfigured()) {
-      saveLookupOptionsCloud({ goodsList: next }).catch((err) =>
+    saveAllData({ goodsList: next }, companyId);
+    if (isSupabaseConfigured() && companyId) {
+      saveLookupOptionsCloud({ goodsList: next }, companyId).catch((err) =>
         console.warn('Supabase sync notice (goods):', err?.message || err)
       );
     }
@@ -784,23 +912,23 @@ export default function App() {
   const handleDeleteBrand = (name: string) => {
     const next = brands.filter((item) => item !== name);
     setBrands(next);
-    saveAllData({ brands: next });
-    if (isSupabaseConfigured()) {
-      saveLookupOptionsCloud({ brands: next }).catch((err) =>
+    saveAllData({ brands: next }, companyId);
+    if (isSupabaseConfigured() && companyId) {
+      saveLookupOptionsCloud({ brands: next }, companyId).catch((err) =>
         console.warn('Supabase sync notice (brands):', err?.message || err)
       );
     }
   };
 
-  // Entry Doc Actions
+  // Entry Doc Actions (tenant-scoped + Import module gated)
   const handleCreateOrUpdateEntryDoc = (
     data: Omit<EntryDoc, 'id' | 'createdAt' | 'unloaded' | 'invoicePaid' | 'receipt' | 'tasks'>
   ) => {
-    if (userRole === 'viewer' || (editingDoc ? !activePermissions.canEditEntry : !activePermissions.canCreateEntry)) {
-      addToast('شما مجوز ثبت یا ویرایش اسناد را ندارید. (فقط ناظر)', 'err');
+    if (!enableImport || userRole === 'viewer' || (editingDoc ? !activePermissions.canEditEntry : !activePermissions.canCreateEntry)) {
+      addToast('شما مجوز ثبت یا ویرایش اسناد ورود را ندارید.', 'err');
       logSecurityEvent({
         type: 'unauthorized_attempt',
-        user: currentUser || 'ناظر',
+        user: currentUser || 'کاربر',
         role: userRole,
         description: 'تلاش غیرمجاز برای ایجاد یا ویرایش سند ورود',
         severity: 'warning',
@@ -821,11 +949,11 @@ export default function App() {
       };
       const updated = docs.map((d) => (d.id === editingDoc.id ? updatedDoc : d));
       setDocs(updated);
-      saveAllData({ docs: updated });
+      saveAllData({ docs: updated }, companyId);
       setEditingDoc(null);
 
-      if (isSupabaseConfigured()) {
-        saveEntryDocCloud(updatedDoc).catch((err) =>
+      if (isSupabaseConfigured() && companyId) {
+        saveEntryDocCloud(updatedDoc, companyId).catch((err) =>
           addToast(`خطا در ذخیره ابری: ${err.message || ''}`, 'err')
         );
       }
@@ -848,10 +976,10 @@ export default function App() {
       };
       const updated = [newDoc, ...docs];
       setDocs(updated);
-      saveAllData({ docs: updated });
+      saveAllData({ docs: updated }, companyId);
 
-      if (isSupabaseConfigured()) {
-        saveEntryDocCloud(newDoc).catch((err) =>
+      if (isSupabaseConfigured() && companyId) {
+        saveEntryDocCloud(newDoc, companyId).catch((err) =>
           addToast(`خطا در ذخیره ابری: ${err.message || ''}`, 'err')
         );
       }
@@ -870,49 +998,44 @@ export default function App() {
   };
 
   const handleStartEditDoc = (doc: EntryDoc) => {
-    if (userRole === 'viewer' || !activePermissions.canEditEntry) {
-      addToast('کاربران ناظر دسترسی ویرایش اسناد را ندارند.', 'err');
+    if (!enableImport || userRole === 'viewer' || !activePermissions.canEditEntry) {
+      addToast('شما دسترسی ویرایش اسناد ورود را ندارید.', 'err');
       return;
     }
 
-    setPassModal({
-      isOpen: true,
-      message: `برای ویرایش سند کوتاژ ${fa(doc.cottage)} رمز مدیریت را وارد کنید.`,
-      action: () => {
-        setEditingDoc(doc);
-        setMobileEntryMode('form');
-        setPassModal((prev) => ({ ...prev, isOpen: false }));
-        window.scrollTo({ top: 0, behavior: 'smooth' });
-      },
-    });
+    setEditingDoc(doc);
+    setMobileEntryMode('form');
+    window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
   const handleDeleteDoc = (id: string) => {
-    if (userRole === 'viewer' || !activePermissions.canDeleteItems) {
-      addToast('کاربران ناظر دسترسی حذف اسناد را ندارند.', 'err');
+    if (!enableImport || userRole === 'viewer' || !activePermissions.canDeleteItems) {
+      addToast('شما دسترسی حذف اسناد را ندارید.', 'err');
       return;
     }
 
     const target = docs.find((d) => d.id === id);
     if (!target) return;
 
-    setPassModal({
+    setConfirmModal({
       isOpen: true,
-      message: `برای حذف سند کوتاژ ${fa(target.cottage)} رمز مدیریت را وارد کنید.`,
+      title: `حذف سند کوتاژ ${fa(target.cottage)}`,
+      text: 'آیا از حذف این سند ورود اطمینان دارید؟ این عملیات غیرقابل بازگشت است.',
       action: () => {
-        // Remove from batch if in any
-        const updatedBatches = batches.map((b) => ({
-          ...b,
-          docIds: b.docIds.filter((docId) => docId !== id),
-        })).filter((b) => b.docIds.length > 0);
+        const updatedBatches = batches
+          .map((b) => ({
+            ...b,
+            docIds: b.docIds.filter((docId) => docId !== id),
+          }))
+          .filter((b) => b.docIds.length > 0);
 
         const updatedDocs = docs.filter((d) => d.id !== id);
         setDocs(updatedDocs);
         setBatches(updatedBatches);
-        saveAllData({ docs: updatedDocs, batches: updatedBatches });
+        saveAllData({ docs: updatedDocs, batches: updatedBatches }, companyId);
 
-        if (isSupabaseConfigured()) {
-          deleteEntryDocCloud(id).catch((err) =>
+        if (isSupabaseConfigured() && companyId) {
+          deleteEntryDocCloud(id, companyId).catch((err) =>
             console.warn('Supabase sync notice (delete entry):', err?.message || err)
           );
         }
@@ -925,7 +1048,7 @@ export default function App() {
           severity: 'warning',
         });
 
-        setPassModal((prev) => ({ ...prev, isOpen: false }));
+        setConfirmModal((prev) => ({ ...prev, isOpen: false }));
         addToast('سند کوتاژ حذف شد', 'info');
       },
     });
@@ -942,10 +1065,10 @@ export default function App() {
       return d;
     });
     setDocs(updated);
-    saveAllData({ docs: updated });
+    saveAllData({ docs: updated }, companyId);
 
-    if (targetDoc && isSupabaseConfigured()) {
-      saveEntryDocCloud(targetDoc).catch((err) =>
+    if (targetDoc && isSupabaseConfigured() && companyId) {
+      saveEntryDocCloud(targetDoc, companyId).catch((err) =>
         console.warn('Supabase sync notice (unloaded):', err?.message || err)
       );
     }
@@ -961,10 +1084,10 @@ export default function App() {
       return d;
     });
     setDocs(updated);
-    saveAllData({ docs: updated });
+    saveAllData({ docs: updated }, companyId);
 
-    if (targetDoc && isSupabaseConfigured()) {
-      saveEntryDocCloud(targetDoc).catch((err) =>
+    if (targetDoc && isSupabaseConfigured() && companyId) {
+      saveEntryDocCloud(targetDoc, companyId).catch((err) =>
         console.warn('Supabase sync notice (invoice):', err?.message || err)
       );
     }
@@ -978,7 +1101,6 @@ export default function App() {
   };
 
   const handleUpdateReceipt = (id: string, number: string, count: string) => {
-    // Unique receipt check
     if (number && docs.some((d) => d.id !== id && d.receipt.number === number)) {
       addToast('این شماره قبض انبار قبلاً برای سند دیگری ثبت شده است', 'err');
       return;
@@ -993,10 +1115,10 @@ export default function App() {
       return d;
     });
     setDocs(updated);
-    saveAllData({ docs: updated });
+    saveAllData({ docs: updated }, companyId);
 
-    if (targetDoc && isSupabaseConfigured()) {
-      saveEntryDocCloud(targetDoc).catch((err) =>
+    if (targetDoc && isSupabaseConfigured() && companyId) {
+      saveEntryDocCloud(targetDoc, companyId).catch((err) =>
         console.warn('Supabase sync notice (receipt):', err?.message || err)
       );
     }
@@ -1015,17 +1137,17 @@ export default function App() {
       return d;
     });
     setDocs(updated);
-    saveAllData({ docs: updated });
+    saveAllData({ docs: updated }, companyId);
 
-    if (targetDoc && isSupabaseConfigured()) {
-      saveEntryDocCloud(targetDoc).catch((err) =>
+    if (targetDoc && isSupabaseConfigured() && companyId) {
+      saveEntryDocCloud(targetDoc, companyId).catch((err) =>
         console.warn('Supabase sync notice (task):', err?.message || err)
       );
     }
   };
 
   const handleMarkDocComplete = (id: string) => {
-    if (!activePermissions.canEditEntry) {
+    if (!enableImport || !activePermissions.canEditEntry) {
       addToast('تغییر وضعیت سند توسط مدیریت سیستم محدود شده است.', 'err');
       return;
     }
@@ -1048,10 +1170,10 @@ export default function App() {
       return d;
     });
     setDocs(updated);
-    saveAllData({ docs: updated });
+    saveAllData({ docs: updated }, companyId);
 
-    if (targetDoc && isSupabaseConfigured()) {
-      saveEntryDocCloud(targetDoc).catch((err) =>
+    if (targetDoc && isSupabaseConfigured() && companyId) {
+      saveEntryDocCloud(targetDoc, companyId).catch((err) =>
         console.warn('Supabase sync notice (markComplete):', err?.message || err)
       );
     }
@@ -1339,16 +1461,19 @@ export default function App() {
     setGoodsList(newGoods);
     setBrands(newBrands);
 
-    saveAllData({
-      docs: updatedDocs,
-      batches: updatedBatches,
-      exits: updatedExits,
-      labRecords: updatedLabRecords,
-      importers: newImporters,
-      carriers: newCarriers,
-      goodsList: newGoods,
-      brands: newBrands,
-    });
+    saveAllData(
+      {
+        docs: updatedDocs,
+        batches: updatedBatches,
+        exits: updatedExits,
+        labRecords: updatedLabRecords,
+        importers: newImporters,
+        carriers: newCarriers,
+        goodsList: newGoods,
+        brands: newBrands,
+      },
+      companyId
+    );
 
     addToast(
       'سناریوی جامع تست شامل پرونده‌های چند کوتاژی، مراحل ورود، تجمیع و خروج با موفقیت ثبت شد',
@@ -1356,14 +1481,14 @@ export default function App() {
     );
   };
 
-  // Consolidation Actions
+  // Consolidation Actions (tenant-scoped + Import module gated)
   const handleCreateBatch = (
     batchId: string,
     docIds: string[],
     goods: string,
     file: string
   ) => {
-    if (userRole === 'viewer' || !activePermissions.canCreateBatch) {
+    if (!enableImport || userRole === 'viewer' || !activePermissions.canCreateBatch) {
       addToast('شما دسترسی ایجاد تجمیع را ندارید.', 'err');
       return;
     }
@@ -1378,10 +1503,10 @@ export default function App() {
     };
     const updatedBatches = [...batches, newBatch];
     setBatches(updatedBatches);
-    saveAllData({ batches: updatedBatches });
+    saveAllData({ batches: updatedBatches }, companyId);
 
-    if (isSupabaseConfigured()) {
-      saveBatchCloud(newBatch).catch((err) =>
+    if (isSupabaseConfigured() && companyId) {
+      saveBatchCloud(newBatch, companyId).catch((err) =>
         console.warn('Supabase sync notice (batch):', err?.message || err)
       );
     }
@@ -1398,7 +1523,7 @@ export default function App() {
   };
 
   const handleFinalizeBatch = (batchId: string) => {
-    if (userRole === 'viewer' || !activePermissions.canCreateBatch) {
+    if (!enableImport || userRole === 'viewer' || !activePermissions.canCreateBatch) {
       addToast('شما دسترسی نهایی‌سازی تجمیع را ندارید.', 'err');
       return;
     }
@@ -1417,10 +1542,10 @@ export default function App() {
           return b;
         });
         setBatches(updated);
-        saveAllData({ batches: updated });
+        saveAllData({ batches: updated }, companyId);
 
-        if (updatedBatch && isSupabaseConfigured()) {
-          saveBatchCloud(updatedBatch).catch((err) =>
+        if (updatedBatch && isSupabaseConfigured() && companyId) {
+          saveBatchCloud(updatedBatch, companyId).catch((err) =>
             console.warn('Supabase sync notice (finalize batch):', err?.message || err)
           );
         }
@@ -1432,7 +1557,7 @@ export default function App() {
   };
 
   const handleDeleteBatch = (batchId: string) => {
-    if (userRole === 'viewer' || !activePermissions.canDeleteItems) {
+    if (!enableImport || userRole === 'viewer' || !activePermissions.canDeleteItems) {
       addToast('شما دسترسی لغو تجمیع را ندارید.', 'err');
       return;
     }
@@ -1444,10 +1569,10 @@ export default function App() {
       action: () => {
         const updated = batches.filter((b) => b.id !== batchId);
         setBatches(updated);
-        saveAllData({ batches: updated });
+        saveAllData({ batches: updated }, companyId);
 
-        if (isSupabaseConfigured()) {
-          deleteBatchCloud(batchId).catch((err) =>
+        if (isSupabaseConfigured() && companyId) {
+          deleteBatchCloud(batchId, companyId).catch((err) =>
             console.warn('Supabase sync notice (delete batch):', err?.message || err)
           );
         }
@@ -1466,11 +1591,11 @@ export default function App() {
     });
   };
 
-  // Exit Actions
+  // Exit Actions (tenant-scoped + Export module gated)
   const handleCreateOrUpdateExitDoc = (
     data: Omit<ExitDoc, 'id' | 'createdAt' | 'route' | 'evaluator' | 'jihad' | 'lab' | 'expert' | 'gate' | 'invoice'>
   ) => {
-    if (userRole === 'viewer' || (editingExitDoc ? !activePermissions.canCreateExit : !activePermissions.canCreateExit)) {
+    if (!enableExport || userRole === 'viewer' || !activePermissions.canCreateExit) {
       addToast('شما مجوز ثبت یا ویرایش اسناد خروج را ندارید.', 'err');
       return;
     }
@@ -1482,11 +1607,11 @@ export default function App() {
       };
       const updated = exits.map((x) => (x.id === editingExitDoc.id ? updatedExitDoc : x));
       setExits(updated);
-      saveAllData({ exits: updated });
+      saveAllData({ exits: updated }, companyId);
       setEditingExitDoc(null);
 
-      if (isSupabaseConfigured()) {
-        saveExitDocCloud(updatedExitDoc).catch((err) =>
+      if (isSupabaseConfigured() && companyId) {
+        saveExitDocCloud(updatedExitDoc, companyId).catch((err) =>
           addToast(`خطا در ذخیره ابری خروج: ${err.message || ''}`, 'err')
         );
       }
@@ -1517,10 +1642,10 @@ export default function App() {
       };
       const updated = [newExit, ...exits];
       setExits(updated);
-      saveAllData({ exits: updated });
+      saveAllData({ exits: updated }, companyId);
 
-      if (isSupabaseConfigured()) {
-        saveExitDocCloud(newExit).catch((err) =>
+      if (isSupabaseConfigured() && companyId) {
+        saveExitDocCloud(newExit, companyId).catch((err) =>
           addToast(`خطا در ذخیره ابری خروج: ${err.message || ''}`, 'err')
         );
       }
@@ -1539,39 +1664,33 @@ export default function App() {
   };
 
   const handleStartEditExit = (exitDoc: ExitDoc) => {
-    if (userRole === 'viewer' || !activePermissions.canCreateExit) {
-      addToast('کاربران ناظر دسترسی ویرایش اسناد خروج را ندارند.', 'err');
+    if (!enableExport || userRole === 'viewer' || !activePermissions.canCreateExit) {
+      addToast('شما دسترسی ویرایش اسناد خروج را ندارید.', 'err');
       return;
     }
 
-    setPassModal({
-      isOpen: true,
-      message: 'برای ویرایش سند خروج رمز مدیریت را وارد کنید.',
-      action: () => {
-        setEditingExitDoc(exitDoc);
-        setMobileExitMode('form');
-        setPassModal((prev) => ({ ...prev, isOpen: false }));
-        window.scrollTo({ top: 0, behavior: 'smooth' });
-      },
-    });
+    setEditingExitDoc(exitDoc);
+    setMobileExitMode('form');
+    window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
   const handleDeleteExit = (id: string) => {
-    if (userRole === 'viewer' || !activePermissions.canDeleteItems) {
-      addToast('کاربران ناظر دسترسی حذف اسناد خروج را ندارند.', 'err');
+    if (!enableExport || userRole === 'viewer' || !activePermissions.canDeleteItems) {
+      addToast('شما دسترسی حذف اسناد خروج را ندارید.', 'err');
       return;
     }
 
-    setPassModal({
+    setConfirmModal({
       isOpen: true,
-      message: 'برای حذف سند خروج رمز مدیریت را وارد کنید.',
+      title: 'حذف سند خروج',
+      text: 'آیا از حذف این سند خروج اطمینان دارید؟',
       action: () => {
         const updated = exits.filter((x) => x.id !== id);
         setExits(updated);
-        saveAllData({ exits: updated });
+        saveAllData({ exits: updated }, companyId);
 
-        if (isSupabaseConfigured()) {
-          deleteExitDocCloud(id).catch((err) =>
+        if (isSupabaseConfigured() && companyId) {
+          deleteExitDocCloud(id, companyId).catch((err) =>
             console.warn('Supabase sync notice (delete exit):', err?.message || err)
           );
         }
@@ -1584,41 +1703,41 @@ export default function App() {
           severity: 'warning',
         });
 
-        setPassModal((prev) => ({ ...prev, isOpen: false }));
+        setConfirmModal((prev) => ({ ...prev, isOpen: false }));
         addToast('سند خروج حذف شد', 'info');
       },
     });
   };
 
   const handleUpdateExitDoc = (updatedDoc: ExitDoc) => {
-    if (userRole === 'viewer' || !activePermissions.canUpdateExitStages) {
-      addToast('کاربران ناظر دسترسی تغییر مراحل خروج را ندارند.', 'err');
+    if (!enableExport || userRole === 'viewer' || !activePermissions.canUpdateExitStages) {
+      addToast('شما دسترسی تغییر مراحل خروج را ندارید.', 'err');
       return;
     }
 
     const updated = exits.map((x) => (x.id === updatedDoc.id ? updatedDoc : x));
     setExits(updated);
-    saveAllData({ exits: updated });
+    saveAllData({ exits: updated }, companyId);
 
-    if (isSupabaseConfigured()) {
-      saveExitDocCloud(updatedDoc).catch((err) =>
+    if (isSupabaseConfigured() && companyId) {
+      saveExitDocCloud(updatedDoc, companyId).catch((err) =>
         console.warn('Supabase sync notice (update exit):', err?.message || err)
       );
     }
   };
 
   const handleAddLabRecord = (rec: LabRecord) => {
-    if (userRole === 'viewer' || !activePermissions.canCreateLab) {
-      addToast('کاربران ناظر دسترسی ثبت سوابق آزمایشگاه را ندارند.', 'err');
+    if (!enableExport || userRole === 'viewer' || !activePermissions.canCreateLab) {
+      addToast('شما دسترسی ثبت سوابق آزمایشگاه را ندارید.', 'err');
       return;
     }
 
     const updated = [...labRecords, rec];
     setLabRecords(updated);
-    saveAllData({ labRecords: updated });
+    saveAllData({ labRecords: updated }, companyId);
 
-    if (isSupabaseConfigured()) {
-      saveLabRecordCloud(rec).catch((err) =>
+    if (isSupabaseConfigured() && companyId) {
+      saveLabRecordCloud(rec, companyId).catch((err) =>
         console.warn('Supabase sync notice (lab record):', err?.message || err)
       );
     }
@@ -1693,7 +1812,7 @@ export default function App() {
 
     const updated = [...newExits, ...exits];
     setExits(updated);
-    saveAllData({ exits: updated });
+    saveAllData({ exits: updated }, companyId);
     addToast('۵ سند خروج نمونه تصادفی ثبت شد', 'ok');
   };
 
@@ -1708,10 +1827,10 @@ export default function App() {
     };
     const updated = docs.map((d) => (d.id === normalizedDoc.id ? normalizedDoc : d));
     setDocs(updated);
-    saveAllData({ docs: updated });
+    saveAllData({ docs: updated }, companyId);
 
-    if (isSupabaseConfigured()) {
-      saveEntryDocCloud(normalizedDoc).catch((err) =>
+    if (isSupabaseConfigured() && companyId) {
+      saveEntryDocCloud(normalizedDoc, companyId).catch((err) =>
         addToast(`خطا در همگام‌سازی ترخیص ۹۰/۱۰: ${err?.message || ''}`, 'err')
       );
     }
@@ -1728,12 +1847,13 @@ export default function App() {
   };
 
   const handleAddPhysicalExit = (tx: PhysicalExitTransaction) => {
+    if (!enableExport) return;
     const updated = [tx, ...physicalExits];
     setPhysicalExits(updated);
-    saveAllData({ physicalExits: updated });
+    saveAllData({ physicalExits: updated }, companyId);
 
-    if (isSupabaseConfigured()) {
-      savePhysicalExitCloud(tx).catch((err) =>
+    if (isSupabaseConfigured() && companyId) {
+      savePhysicalExitCloud(tx, companyId).catch((err) =>
         console.warn('Supabase sync notice (physical exit add):', err?.message || err)
       );
     }
@@ -1748,12 +1868,13 @@ export default function App() {
   };
 
   const handleUpdatePhysicalExit = (tx: PhysicalExitTransaction) => {
+    if (!enableExport) return;
     const updated = physicalExits.map((p) => (p.id === tx.id ? tx : p));
     setPhysicalExits(updated);
-    saveAllData({ physicalExits: updated });
+    saveAllData({ physicalExits: updated }, companyId);
 
-    if (isSupabaseConfigured()) {
-      savePhysicalExitCloud(tx).catch((err) =>
+    if (isSupabaseConfigured() && companyId) {
+      savePhysicalExitCloud(tx, companyId).catch((err) =>
         console.warn('Supabase sync notice (physical exit update):', err?.message || err)
       );
     }
@@ -1768,13 +1889,14 @@ export default function App() {
   };
 
   const handleDeletePhysicalExit = (id: string) => {
+    if (!enableExport) return;
     const target = physicalExits.find((p) => p.id === id);
     const updated = physicalExits.filter((p) => p.id !== id);
     setPhysicalExits(updated);
-    saveAllData({ physicalExits: updated });
+    saveAllData({ physicalExits: updated }, companyId);
 
-    if (isSupabaseConfigured()) {
-      deletePhysicalExitCloud(id).catch((err) =>
+    if (isSupabaseConfigured() && companyId) {
+      deletePhysicalExitCloud(id, companyId).catch((err) =>
         console.warn('Supabase sync notice (physical exit delete):', err?.message || err)
       );
     }
@@ -1793,9 +1915,9 @@ export default function App() {
   const handleAddDailyTask = (task: DailyTask) => {
     const updated = [task, ...dailyTasks];
     setDailyTasks(updated);
-    saveAllData({ dailyTasks: updated });
-    if (isSupabaseConfigured()) {
-      saveDailyTaskCloud(task).catch((err) =>
+    saveAllData({ dailyTasks: updated }, companyId);
+    if (isSupabaseConfigured() && companyId) {
+      saveDailyTaskCloud(task, companyId).catch((err) =>
         console.warn('Supabase sync notice (add task):', err?.message || err)
       );
     }
@@ -1805,9 +1927,9 @@ export default function App() {
   const handleUpdateDailyTask = (task: DailyTask) => {
     const updated = dailyTasks.map((t) => (t.id === task.id ? task : t));
     setDailyTasks(updated);
-    saveAllData({ dailyTasks: updated });
-    if (isSupabaseConfigured()) {
-      saveDailyTaskCloud(task).catch((err) =>
+    saveAllData({ dailyTasks: updated }, companyId);
+    if (isSupabaseConfigured() && companyId) {
+      saveDailyTaskCloud(task, companyId).catch((err) =>
         console.warn('Supabase sync notice (update task):', err?.message || err)
       );
     }
@@ -1816,9 +1938,9 @@ export default function App() {
   const handleDeleteDailyTask = (id: string) => {
     const updated = dailyTasks.filter((t) => t.id !== id);
     setDailyTasks(updated);
-    saveAllData({ dailyTasks: updated });
-    if (isSupabaseConfigured()) {
-      deleteDailyTaskCloud(id).catch((err) =>
+    saveAllData({ dailyTasks: updated }, companyId);
+    if (isSupabaseConfigured() && companyId) {
+      deleteDailyTaskCloud(id, companyId).catch((err) =>
         console.warn('Supabase sync notice (delete task):', err?.message || err)
       );
     }
@@ -1827,7 +1949,7 @@ export default function App() {
 
   // Smart Auto Follow-up Task Generation (deduplicated by autoSourceKey)
   useEffect(() => {
-    if (!dataLoadedRef.current) return;
+    if (!dataLoadedRef.current || !companyId) return;
     if (docs.length === 0 && labRecords.length === 0) return;
 
     const generated = generateAutoFollowUpTasks({
@@ -1841,14 +1963,14 @@ export default function App() {
     if (generated.length > 0) {
       const merged = [...generated, ...dailyTasks];
       setDailyTasks(merged);
-      saveAllData({ dailyTasks: merged });
-      if (isSupabaseConfigured()) {
+      saveAllData({ dailyTasks: merged }, companyId);
+      if (isSupabaseConfigured() && companyId) {
         generated.forEach((task) => {
-          saveDailyTaskCloud(task).catch(() => {});
+          saveDailyTaskCloud(task, companyId).catch(() => {});
         });
       }
     }
-  }, [docs, exits, labRecords, physicalExits]);
+  }, [docs, exits, labRecords, physicalExits, companyId]);
 
   // Real-Time Deduplicated Notification Engine
   const notifications = React.useMemo<AppNotification[]>(() => {
@@ -1879,9 +2001,9 @@ export default function App() {
 
   const upsertNotificationStates = (nextStates: NotificationStateRecord[]) => {
     setNotificationStates(nextStates);
-    saveAllData({ notificationStates: nextStates });
-    if (isSupabaseConfigured()) {
-      saveNotificationStatesCloud(nextStates).catch((err) =>
+    saveAllData({ notificationStates: nextStates }, companyId);
+    if (isSupabaseConfigured() && companyId) {
+      saveNotificationStatesCloud(nextStates, companyId).catch((err) =>
         console.warn('Supabase sync notice (notifications):', err?.message || err)
       );
     }
@@ -2099,6 +2221,60 @@ export default function App() {
     );
   }
 
+  // Checking existing Supabase Auth session & workspace membership
+  if (authView === 'checking') {
+    return (
+      <div
+        className="min-h-[100dvh] flex flex-col items-center justify-center gap-4 bg-[#050a14] text-slate-200 font-vazir dir-rtl"
+        dir="rtl"
+      >
+        <OfflineIndicator />
+        <div className="w-14 h-14 rounded-2xl bg-cyan-500/15 border border-cyan-400/40 flex items-center justify-center shadow-lg shadow-cyan-500/15">
+          <Loader2 className="w-7 h-7 text-cyan-400 animate-spin" />
+        </div>
+        <div className="text-center space-y-1">
+          <p className="font-lalezar text-xl text-white">در حال بارگذاری فضای کاری شرکت...</p>
+          <p className="text-xs text-slate-400">بررسی نشست احراز هویت و مجوزهای دسترسی</p>
+        </div>
+      </div>
+    );
+  }
+
+  // Render Multi-Step Company Onboarding / Restart / Legacy Claim Wizard
+  if (authView === 'onboarding') {
+    return (
+      <>
+        <OfflineIndicator />
+        <CompanyOnboardingWizard
+          mode={onboardingMode}
+          initialCompany={onboardingMode === 'restart' ? workspace?.company || null : null}
+          initialRoles={onboardingMode === 'restart' ? wizardRoles : []}
+          existingMembers={onboardingMode === 'restart' ? wizardMembers : []}
+          currentOwner={onboardingMode === 'restart' ? workspace?.member || null : null}
+          onCancel={() => {
+            if (onboardingMode === 'restart' && workspace?.company.onboardingCompleted) {
+              setAuthView('ready');
+            } else {
+              setAuthView('login');
+            }
+          }}
+          onComplete={async (res) => {
+            setSelectedCompanyId(res.company.id);
+            setAuthView('checking');
+            await refreshWorkspace(res.company.id);
+            addToast(
+              onboardingMode === 'restart'
+                ? 'پیکربندی شرکت با موفقیت بروزرسانی شد.'
+                : `فضای کاری شرکت «${res.company.name}» با موفقیت راه‌اندازی شد.`,
+              'ok'
+            );
+          }}
+        />
+        <ToastContainer toasts={toasts} onDismiss={removeToast} />
+      </>
+    );
+  }
+
   // Render Login Gate if not authenticated or during logout animation
   if (!isAuthenticated || isLoggingOut) {
     return (
@@ -2106,9 +2282,12 @@ export default function App() {
         <OfflineIndicator />
         <LoginGate
           onSuccess={handleLoginSuccess}
+          onStartOnboarding={handleStartOnboarding}
           isLoggingOut={isLoggingOut}
           onLogoutComplete={handleLogoutComplete}
+          externalError={authExternalError}
         />
+        <ToastContainer toasts={toasts} onDismiss={removeToast} />
       </>
     );
   }
@@ -2120,30 +2299,32 @@ export default function App() {
       {/* Top Bar (Desktop full toolbar; Mobile slim title-only header) */}
       <Navbar
         onLogout={handleLogout}
+        onClearAllData={handleClearAllData}
         onOpenCloudDb={activePermissions.canAccessCloudDb ? () => setIsCloudDbModalOpen(true) : undefined}
         onManualSync={activePermissions.canAccessCloudDb ? handleManualCloudSync : undefined}
         onOpenSummaryModal={activePermissions.canViewSummaryModal ? () => setIsSummaryModalOpen(true) : undefined}
         onOpenSecurityCenter={() => setIsSecurityModalOpen(true)}
+        onOpenCompanySettings={canOpenCompanySettings ? () => setIsCompanySettingsOpen(true) : undefined}
         onOpenNotifications={() => setIsNotificationDrawerOpen(true)}
         onOpenDailyTasks={() => setIsDailyTasksDrawerOpen(true)}
         unreadNotificationsCount={unreadNotificationsCount}
         pendingTasksCount={pendingTasksCount}
         overdueTasksCount={overdueTasksCount}
-        activeOperator={activeOperator}
-        onSwitchOperator={userRole === 'admin' ? handleSwitchOperator : undefined}
-        isDefaultPasswordActive={isUsingDefaultPasswords()}
+        company={company}
+        member={workspace?.member || null}
+        roleName={workspace?.role.name}
+        allMemberships={workspace?.allMemberships || []}
+        onSwitchCompany={handleSwitchCompany}
         lastCloudSyncTime={lastCloudSyncTime}
         isCloudSyncing={isCloudSyncing}
-        currentUser={currentUser}
-        userRole={userRole}
       />
 
       {/* Tabs Navigation - Desktop & Tablet Floating Glass Capsule Dock (mobile uses MobileBottomNav) */}
       <nav className="hidden md:block relative z-10 max-w-[1460px] mx-auto px-3 sm:px-6 pt-3 sm:pt-5">
         <div className="flex items-center justify-between pb-3 sm:pb-4 border-b border-white/8">
           <div className="w-full sm:w-auto ios-glass-pill p-1.5 sm:p-2 rounded-2xl sm:rounded-full grid grid-cols-2 sm:grid-cols-4 lg:flex lg:items-center gap-1.5 sm:gap-2">
-            {/* Section 1: ورود کالا */}
-            {activePermissions.canViewEntry && (
+            {/* Section 1: ورود کالا (Import Module) */}
+            {enableImport && activePermissions.canViewEntry && (
               <motion.button
                 whileTap={{ scale: 0.97 }}
                 onClick={() => setMainTab('entry')}
@@ -2178,8 +2359,8 @@ export default function App() {
               </motion.button>
             )}
 
-            {/* Section 2: خروج کالا */}
-            {activePermissions.canViewExit && (
+            {/* Section 2: خروج کالا (Export Module) */}
+            {enableExport && activePermissions.canViewExit && (
               <motion.button
                 whileTap={{ scale: 0.97 }}
                 onClick={() => setMainTab('exit')}
@@ -2292,8 +2473,8 @@ export default function App() {
       {/* Main Content Area (no z-index stacking trap so child modals/lightboxes paint above bars) */}
       <main className="relative max-w-[1460px] mx-auto px-3 sm:px-6 pt-3 sm:pt-5 md:pt-6">
         <AnimatePresence mode="wait">
-          {/* SECTION 1: GOODS ENTRY (ورود کالا) */}
-          {mainTab === 'entry' && (
+          {/* SECTION 1: GOODS ENTRY (ورود کالا - Import Module) */}
+          {mainTab === 'entry' && enableImport && activePermissions.canViewEntry && (
             <motion.div
               key="main-tab-entry"
               initial={{ opacity: 0, y: 12 }}
@@ -2665,8 +2846,8 @@ export default function App() {
             </motion.div>
           )}
 
-          {/* SECTION 2: GOODS EXIT (خروج کالا) */}
-          {mainTab === 'exit' && (
+          {/* SECTION 2: GOODS EXIT (خروج کالا - Export Module) */}
+          {mainTab === 'exit' && enableExport && activePermissions.canViewExit && (
             <motion.div
               key="main-tab-exit"
               initial={{ opacity: 0, y: 12 }}
@@ -2690,18 +2871,20 @@ export default function App() {
                   <span>ثبت کوتاژ و ترخیص ۹۰/۱۰</span>
                 </motion.button>
 
-                <motion.button
-                  whileTap={{ scale: 0.97 }}
-                  onClick={() => setExitSubTab('lab')}
-                  className={`min-h-[40px] flex items-center gap-1.5 sm:gap-2 px-3.5 sm:px-4 py-1.5 sm:py-2 rounded-full text-xs sm:text-sm font-bold shrink-0 transition-colors ${
-                    exitSubTab === 'lab'
-                      ? 'bg-gradient-to-b from-purple-500/35 to-pink-500/20 text-purple-200 border border-purple-400/60'
-                      : 'text-slate-400 hover:text-slate-200 hover:bg-white/5 border border-transparent'
-                  }`}
-                >
-                  <FlaskConical className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-purple-400" />
-                  <span>سوابق آزمایشگاه</span>
-                </motion.button>
+                {activePermissions.canViewLab && (
+                  <motion.button
+                    whileTap={{ scale: 0.97 }}
+                    onClick={() => setExitSubTab('lab')}
+                    className={`min-h-[40px] flex items-center gap-1.5 sm:gap-2 px-3.5 sm:px-4 py-1.5 sm:py-2 rounded-full text-xs sm:text-sm font-bold shrink-0 transition-colors ${
+                      exitSubTab === 'lab'
+                        ? 'bg-gradient-to-b from-purple-500/35 to-pink-500/20 text-purple-200 border border-purple-400/60'
+                        : 'text-slate-400 hover:text-slate-200 hover:bg-white/5 border border-transparent'
+                    }`}
+                  >
+                    <FlaskConical className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-purple-400" />
+                    <span>سوابق آزمایشگاه</span>
+                  </motion.button>
+                )}
               </div>
 
             {/* Sub-tab 1: Exit Docs */}
@@ -3050,7 +3233,7 @@ export default function App() {
           )}
 
           {/* SECTION 3: REPORTS & ANALYTICS (گزارش‌گیری تحلیلی بر اساس شماره پرونده) */}
-          {mainTab === 'reports' && (
+          {mainTab === 'reports' && activePermissions.canViewReports && (
             <motion.div
               key="main-tab-reports"
               initial={{ opacity: 0, y: 12 }}
@@ -3060,17 +3243,17 @@ export default function App() {
               className="space-y-5 sm:space-y-6"
             >
               <ReportsSection
-                docs={docs}
-                exits={exits}
-                batches={batches}
+                docs={enableImport ? docs : []}
+                exits={enableExport ? exits : []}
+                batches={enableImport ? batches : []}
                 getStageOf={getStageOfDoc}
-                onClose={() => setMainTab('entry')}
+                onClose={() => setMainTab(enableImport ? 'entry' : 'exit')}
               />
             </motion.div>
           )}
 
           {/* SECTION 4: CUSTOMS LETTERS & TEMPLATES (بانک نامه‌ها و الگوهای گمرکی) */}
-          {mainTab === 'letters' && (
+          {mainTab === 'letters' && activePermissions.canViewLetters !== false && (
             <motion.div
               key="main-tab-letters"
               initial={{ opacity: 0, y: 12 }}
@@ -3080,8 +3263,9 @@ export default function App() {
               className="space-y-5 sm:space-y-6"
             >
               <CustomsLettersSection
-                onClose={() => setMainTab('entry')}
-                primaryCompany={importers[0] || ''}
+                companyId={companyId}
+                onClose={() => setMainTab(enableImport ? 'entry' : enableExport ? 'exit' : 'reports')}
+                primaryCompany={company?.name || importers[0] || ''}
                 primaryCargo={goodsList[0] || ''}
                 canManageLetters={Boolean(activePermissions.canManageLetters && userRole !== 'viewer')}
                 isViewOnly={userRole === 'viewer' || !activePermissions.canManageLetters}
@@ -3101,17 +3285,19 @@ export default function App() {
                 onOpenCloudDb={activePermissions.canAccessCloudDb ? () => setIsCloudDbModalOpen(true) : undefined}
                 onOpenSummaryModal={activePermissions.canViewSummaryModal ? () => setIsSummaryModalOpen(true) : undefined}
                 onOpenSecurityCenter={() => setIsSecurityModalOpen(true)}
+                onOpenCompanySettings={canOpenCompanySettings ? () => setIsCompanySettingsOpen(true) : undefined}
                 onOpenNotifications={() => setIsNotificationDrawerOpen(true)}
                 onOpenDailyTasks={() => setIsDailyTasksDrawerOpen(true)}
                 unreadNotificationsCount={unreadNotificationsCount}
                 pendingTasksCount={pendingTasksCount}
                 overdueTasksCount={overdueTasksCount}
-                activeOperator={activeOperator}
-                onSwitchOperator={userRole === 'admin' ? handleSwitchOperator : undefined}
-                isDefaultPasswordActive={isUsingDefaultPasswords()}
+                company={company}
+                member={workspace?.member || null}
+                roleName={workspace?.role.name}
+                allMemberships={workspace?.allMemberships || []}
+                onSwitchCompany={handleSwitchCompany}
                 lastCloudSyncTime={lastCloudSyncTime}
                 isCloudSyncing={isCloudSyncing}
-                userRole={userRole}
               />
             </motion.div>
           )}
@@ -3126,9 +3312,9 @@ export default function App() {
           window.scrollTo({ top: 0, behavior: 'smooth' });
         }}
         toolsAlertCount={unreadNotificationsCount + overdueTasksCount}
-        hasSecurityWarning={isUsingDefaultPasswords()}
-        canViewEntry={activePermissions.canViewEntry}
-        canViewExit={activePermissions.canViewExit}
+        hasSecurityWarning={false}
+        canViewEntry={enableImport && activePermissions.canViewEntry}
+        canViewExit={enableExport && activePermissions.canViewExit}
         canViewReports={activePermissions.canViewReports}
         canViewLetters={activePermissions.canViewLetters !== false}
       />
@@ -3153,10 +3339,25 @@ export default function App() {
         onCancel={() => setConfirmModal((prev) => ({ ...prev, isOpen: false }))}
       />
 
+      {/* Company Settings Modal (Profile, Operations, Users, Roles, Onboarding Restart) */}
+      {workspace && canOpenCompanySettings && (
+        <CompanySettingsModal
+          isOpen={isCompanySettingsOpen}
+          onClose={() => setIsCompanySettingsOpen(false)}
+          workspace={workspace}
+          onWorkspaceUpdated={() => refreshWorkspace(workspace.company.id)}
+          onLaunchRestartWizard={handleLaunchRestartWizard}
+          addToast={addToast}
+        />
+      )}
+
       {/* Cloud Database Sync Modal */}
       <CloudDbSyncModal
         isOpen={isCloudDbModalOpen}
         onClose={() => setIsCloudDbModalOpen(false)}
+        companyId={companyId}
+        enableImport={enableImport}
+        enableExport={enableExport}
         lastCloudSyncTime={lastCloudSyncTime}
         localData={{
           docs: docs || [],
@@ -3184,7 +3385,7 @@ export default function App() {
             setCarriers(cloudData.carriers || []);
             setGoodsList(cloudData.goodsList || []);
             setBrands(cloudData.brands || []);
-            saveAllData(cloudData);
+            saveAllData(cloudData, companyId);
             addToast('داده‌ها با پایگاه داده ابری همگام‌سازی شدند', 'ok');
           }
         }}
@@ -3195,63 +3396,53 @@ export default function App() {
       <CommoditySummaryModal
         isOpen={isSummaryModalOpen}
         onClose={() => setIsSummaryModalOpen(false)}
-        docs={docs}
-        exits={exits}
-        batches={batches}
-      />
-
-      {/* User Permissions Management Modal (Admin Only - Nazari) */}
-      <UserPermissionsModal
-        isOpen={isPermissionsModalOpen}
-        onClose={() => setIsPermissionsModalOpen(false)}
-        permissionsMap={permissionsMap}
-        onSavePermissions={handleSavePermissions}
+        docs={enableImport ? docs : []}
+        exits={enableExport ? exits : []}
+        batches={enableImport ? batches : []}
       />
 
       {/* Security Center Modal */}
       <SecurityCenterModal
         isOpen={isSecurityModalOpen}
         onClose={() => setIsSecurityModalOpen(false)}
-        canManagePermissions={userRole === 'admin' && activeOperator === 'نظری'}
-        onOpenPermissionsModal={() => setIsPermissionsModalOpen(true)}
+        canManagePermissions={canOpenCompanySettings}
+        onOpenPermissionsModal={() => {
+          setIsSecurityModalOpen(false);
+          setIsCompanySettingsOpen(true);
+        }}
         addToast={addToast}
         onPasswordsUpdated={() => {
-          addToast('کدهای امنیتی سامانه بروزرسانی گردید', 'ok');
+          addToast('تنظیمات امنیتی سامانه بروزرسانی گردید', 'ok');
         }}
       />
 
-      {/* 90% / 10% Clearance & Multi-Truck Physical Exit Drawer */}
-      <Clearance9010Drawer
-        isOpen={Boolean(clearanceDrawerDoc)}
-        doc={clearanceDrawerDoc}
-        exits={exits}
-        batches={batches}
-        physicalExits={physicalExits}
-        currentUser={activeOperatorLabel}
-        permissions={activePermissions}
-        isViewOnly={userRole === 'viewer'}
-        onClose={() => setClearanceDrawerDocId(null)}
-        onUpdateDoc={handleUpdateEntryClearanceDoc}
-        onRequestMasterPassword={(message, onSuccess) =>
-          setPassModal({
-            isOpen: true,
-            message,
-            action: () => {
-              setPassModal((prev) => ({ ...prev, isOpen: false }));
-              onSuccess();
-            },
-          })
-        }
-        onAddPhysicalExit={handleAddPhysicalExit}
-        onUpdatePhysicalExit={handleUpdatePhysicalExit}
-        onDeletePhysicalExit={handleDeletePhysicalExit}
-        onCreateFollowUpTask={(targetDoc) => {
-          setClearanceDrawerDocId(null);
-          setTaskPrefillDoc(targetDoc);
-          setIsDailyTasksDrawerOpen(true);
-        }}
-        addToast={addToast}
-      />
+      {/* 90% / 10% Clearance & Multi-Truck Physical Exit Drawer (Export Module) */}
+      {enableExport && (
+        <Clearance9010Drawer
+          isOpen={Boolean(clearanceDrawerDoc)}
+          doc={clearanceDrawerDoc}
+          exits={exits}
+          batches={batches}
+          physicalExits={physicalExits}
+          currentUser={activeOperatorLabel}
+          permissions={activePermissions}
+          isViewOnly={userRole === 'viewer'}
+          onClose={() => setClearanceDrawerDocId(null)}
+          onUpdateDoc={handleUpdateEntryClearanceDoc}
+          onRequestMasterPassword={(_message, onSuccess) => {
+            onSuccess();
+          }}
+          onAddPhysicalExit={handleAddPhysicalExit}
+          onUpdatePhysicalExit={handleUpdatePhysicalExit}
+          onDeletePhysicalExit={handleDeletePhysicalExit}
+          onCreateFollowUpTask={(targetDoc) => {
+            setClearanceDrawerDocId(null);
+            setTaskPrefillDoc(targetDoc);
+            setIsDailyTasksDrawerOpen(true);
+          }}
+          addToast={addToast}
+        />
+      )}
 
       {/* Integrated Smart Notification Center Drawer */}
       <NotificationCenterDrawer
@@ -3273,8 +3464,8 @@ export default function App() {
           setTaskPrefillDoc(null);
         }}
         tasks={dailyTasks}
-        docs={docs}
-        exits={exits}
+        docs={enableImport ? docs : []}
+        exits={enableExport ? exits : []}
         currentUser={activeOperatorLabel}
         canManage={userRole !== 'viewer' && activePermissions.canManageTasks !== false}
         canDelete={userRole !== 'viewer' && activePermissions.canDeleteItems}

@@ -8,7 +8,6 @@ const STORAGE_KEYS = {
 function sanitizeUrl(rawUrl: string): string {
   if (!rawUrl) return '';
   let cleaned = rawUrl.trim();
-  // Strip trailing slashes and any accidentally appended /rest/v1 or /auth/v1
   cleaned = cleaned.replace(/\/+$|\/(rest|auth)\/v\d+\/?$/i, '');
   return cleaned;
 }
@@ -37,8 +36,16 @@ function isValidSupabaseUrl(url: string): boolean {
   try {
     const parsed = new URL(url);
     if (!parsed.hostname || !parsed.hostname.includes('.')) return false;
-    if (parsed.hostname === 'localhost' || parsed.hostname.endsWith('.example.com') || parsed.hostname === 'example.com') return false;
-    if (parsed.hostname.includes('your-project') || parsed.hostname.includes('your_project')) return false;
+    if (
+      parsed.hostname === 'localhost' ||
+      parsed.hostname.endsWith('.example.com') ||
+      parsed.hostname === 'example.com'
+    ) {
+      return false;
+    }
+    if (parsed.hostname.includes('your-project') || parsed.hostname.includes('your_project')) {
+      return false;
+    }
     return true;
   } catch {
     return false;
@@ -51,13 +58,18 @@ function isValidSupabaseKey(key: string): boolean {
   return true;
 }
 
-// Check for environment variables (primary) or stored local configuration (optional override)
 export function getSavedSupabaseCredentials(): { url: string; key: string } {
   const envUrl = import.meta.env.VITE_SUPABASE_URL || '';
   const envKey = import.meta.env.VITE_SUPABASE_ANON_KEY || '';
 
-  const storedUrl = localStorage.getItem(STORAGE_KEYS.URL) || '';
-  const storedKey = localStorage.getItem(STORAGE_KEYS.KEY) || '';
+  let storedUrl = '';
+  let storedKey = '';
+  try {
+    storedUrl = localStorage.getItem(STORAGE_KEYS.URL) || '';
+    storedKey = localStorage.getItem(STORAGE_KEYS.KEY) || '';
+  } catch {
+    // ignore storage errors in restricted environments
+  }
 
   const rawUrl = envUrl || storedUrl;
   const rawKey = envKey || storedKey;
@@ -87,8 +99,10 @@ export function getSupabase(): SupabaseClient | null {
   try {
     supabaseInstance = createClient(url, key, {
       auth: {
-        persistSession: false,
-        autoRefreshToken: false,
+        persistSession: true,
+        autoRefreshToken: true,
+        detectSessionInUrl: false,
+        storageKey: 'ctm_supabase_auth_session',
       },
     });
     currentClientKey = clientKey;
@@ -123,8 +137,10 @@ export function saveSupabaseCredentials(url: string, key: string): boolean {
 
     supabaseInstance = createClient(cleanedUrl, trimmedKey, {
       auth: {
-        persistSession: false,
-        autoRefreshToken: false,
+        persistSession: true,
+        autoRefreshToken: true,
+        detectSessionInUrl: false,
+        storageKey: 'ctm_supabase_auth_session',
       },
     });
     currentClientKey = `${cleanedUrl}::${trimmedKey}`;
@@ -136,10 +152,12 @@ export function saveSupabaseCredentials(url: string, key: string): boolean {
 }
 
 export function clearSupabaseCredentials(): void {
-  localStorage.removeItem(STORAGE_KEYS.URL);
-  localStorage.removeItem(STORAGE_KEYS.KEY);
+  try {
+    localStorage.removeItem(STORAGE_KEYS.URL);
+    localStorage.removeItem(STORAGE_KEYS.KEY);
+  } catch {
+    // ignore
+  }
   supabaseInstance = null;
   currentClientKey = '';
 }
-
-

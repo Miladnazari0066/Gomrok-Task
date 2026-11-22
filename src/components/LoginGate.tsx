@@ -1,395 +1,426 @@
 import React, { useState, useEffect } from 'react';
-import { motion, AnimatePresence } from 'motion/react';
+import { motion } from 'motion/react';
 import {
   Lock,
-  ArrowLeft,
-  ShieldCheck,
-  CheckCircle2,
-  AlertCircle,
-  KeyRound,
+  Mail,
   LogIn,
   Eye,
   EyeOff,
+  Building2,
+  AlertCircle,
+  CheckCircle2,
+  Database,
+  Copy,
+  Check,
+  ArrowLeft,
+  ShieldCheck,
   Sparkles,
-  Clock,
-  ShieldAlert,
-  Info,
+  Loader2,
 } from 'lucide-react';
 import {
-  checkAccessCodeRole,
-  isAccountLocked,
-  getLockoutRemainingSeconds,
-  recordFailedAttempt,
-  resetFailedAttempts,
-  logSecurityEvent,
-  isUsingDefaultPasswords,
-  createSessionToken,
-} from '../utils/security';
+  getSupabase,
+  isSupabaseConfigured,
+  getSavedSupabaseCredentials,
+  saveSupabaseCredentials,
+} from '../lib/supabase';
+import {
+  fetchOnboardingStatus,
+  fetchServerHealth,
+  loginWithIdentifier,
+} from '../services/workspaceApi';
+import { SUPABASE_SQL_SCHEMA } from '../utils/sqlSchema';
 
 export type UserRole = 'admin' | 'viewer';
 
-export interface LoginResult {
-  role: UserRole;
-  displayName: string;
-}
-
 interface LoginGateProps {
-  onSuccess: (role: UserRole) => void;
+  onSuccess: () => void;
+  onStartOnboarding: (mode: 'create' | 'claim_legacy') => void;
   isLoggingOut?: boolean;
   onLogoutComplete?: () => void;
+  externalError?: string;
 }
 
 export const LoginGate: React.FC<LoginGateProps> = ({
   onSuccess,
+  onStartOnboarding,
   isLoggingOut,
   onLogoutComplete,
+  externalError,
 }) => {
-  const [accessCode, setAccessCode] = useState('');
+  const [identifier, setIdentifier] = useState('');
+  const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
-  const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(externalError || '');
   const [isAccessGranted, setIsAccessGranted] = useState(false);
-  const [shake, setShake] = useState(false);
 
-  // Lockout countdown timer
-  const [lockoutSec, setLockoutSec] = useState<number>(() => getLockoutRemainingSeconds());
+  const [serverAdminReady, setServerAdminReady] = useState<boolean | null>(null);
+  const [hasUnclaimedLegacy, setHasUnclaimedLegacy] = useState(false);
+  const [legacyCompanyName, setLegacyCompanyName] = useState('');
+  const [showSetupHelper, setShowSetupHelper] = useState(false);
+  const [copiedSql, setCopiedSql] = useState(false);
+
+  const existingCreds = getSavedSupabaseCredentials();
+  const [sbUrl, setSbUrl] = useState(existingCreds.url);
+  const [sbAnonKey, setSbAnonKey] = useState(existingCreds.key);
+  const [clientConfigured, setClientConfigured] = useState(() => isSupabaseConfigured());
 
   useEffect(() => {
-    if (lockoutSec <= 0) return;
-    const interval = setInterval(() => {
-      const remaining = getLockoutRemainingSeconds();
-      setLockoutSec(remaining);
-      if (remaining <= 0) {
-        clearInterval(interval);
-        setError('');
-      }
-    }, 1000);
-    return () => clearInterval(interval);
-  }, [lockoutSec]);
+    if (externalError) setError(externalError);
+  }, [externalError]);
 
-  // Auto trigger completion on logout (1.5 seconds)
   useEffect(() => {
     if (isLoggingOut) {
       const timer = setTimeout(() => {
         if (onLogoutComplete) onLogoutComplete();
-      }, 1500);
+      }, 900);
       return () => clearTimeout(timer);
     }
   }, [isLoggingOut, onLogoutComplete]);
 
-  const triggerSuccess = (role: UserRole) => {
-    createSessionToken(role);
-    logSecurityEvent({
-      type: 'login_success',
-      user: role === 'admin' ? 'مدیر' : 'بازدیدکننده',
-      role,
-      description: `ورود موفق به سامانه با دسترسی ${role === 'admin' ? 'مدیریت کل' : 'ناظر (فقط مشاهده و پرینت)'}`,
-      severity: 'info',
+  useEffect(() => {
+    let active = true;
+    Promise.all([
+      fetchServerHealth().catch(() => ({ ok: false, supabaseConfigured: false, adminConfigured: false })),
+      fetchOnboardingStatus().catch(() => ({
+        adminConfigured: false,
+        hasUnclaimedLegacyCompany: false,
+        legacyCompanyName: '',
+      })),
+    ]).then(([health, status]) => {
+      if (!active) return;
+      setServerAdminReady(Boolean(health.adminConfigured));
+      setHasUnclaimedLegacy(Boolean(status.hasUnclaimedLegacyCompany));
+      setLegacyCompanyName(status.legacyCompanyName || '');
     });
+    return () => {
+      active = false;
+    };
+  }, [clientConfigured]);
 
-    setIsAccessGranted(true);
-    setError('');
-
-    setTimeout(() => {
-      onSuccess(role);
-    }, 1100);
-  };
-
-  const handleVerify = (code: string) => {
-    const cleanCode = code.trim();
-    if (!cleanCode) return;
-
-    if (isAccountLocked()) {
-      const rem = getLockoutRemainingSeconds();
-      setLockoutSec(rem);
-      setError(`سامانه به دلیل تلاش‌های مکرر قفل است. لطفاً ${rem} ثانیه دیگر مجدداً تلاش فرمایید.`);
-      setShake(true);
-      setTimeout(() => setShake(false), 500);
-      return;
-    }
-
-    const detectedRole = checkAccessCodeRole(cleanCode);
-
-    if (detectedRole) {
-      triggerSuccess(detectedRole);
-    } else {
-      const attemptRes = recordFailedAttempt('گیت ورودی');
-      setShake(true);
-      setTimeout(() => setShake(false), 500);
-
-      if (attemptRes.locked) {
-        setLockoutSec(attemptRes.remainingSeconds);
-        setError(`حساب به مدت ${attemptRes.remainingSeconds} ثانیه به دلیل ۵ تلاش ناموفق مسدود گردید.`);
-      } else {
-        setError(
-          `کد دسترسی نامعتبر است. (${attemptRes.attemptsLeft} تلاش مجاز تا قفل موقت سیستم باقی‌مانده است)`
-        );
-      }
-    }
-  };
-
-  const handleInput = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const val = e.target.value.trim();
-    setAccessCode(val);
-    setError('');
-
-    // If matches a role immediately
-    if (val.length >= 4 && !isAccountLocked()) {
-      const role = checkAccessCodeRole(val);
-      if (role) {
-        triggerSuccess(role);
-      }
-    }
-  };
-
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSaveClientSupabase = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!accessCode) {
-      setError('لطفاً کد دسترسی را وارد نمایید.');
-      setShake(true);
-      setTimeout(() => setShake(false), 500);
-      return;
+    const ok = saveSupabaseCredentials(sbUrl, sbAnonKey);
+    if (ok) {
+      setClientConfigured(true);
+      setError('');
+      setShowSetupHelper(false);
+    } else {
+      setError('آدرس یا کلید Anon Key پروژه Supabase معتبر نیست.');
     }
-    handleVerify(accessCode);
   };
 
-  const isLocked = lockoutSec > 0;
-  const isDefault = isUsingDefaultPasswords();
+  const handleCopySql = async () => {
+    try {
+      await navigator.clipboard.writeText(SUPABASE_SQL_SCHEMA);
+      setCopiedSql(true);
+      setTimeout(() => setCopiedSql(false), 2500);
+    } catch {
+      setError('امکان کپی خودکار نبود. فایل supabase/schema.sql را مستقیماً باز کنید.');
+    }
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const cleanId = identifier.trim();
+    if (!cleanId || !password) {
+      setError('لطفاً ایمیل یا نام کاربری و رمز عبور خود را وارد کنید.');
+      return;
+    }
+
+    const supabase = getSupabase();
+    if (!supabase) {
+      setError('اتصال کلاینت Supabase هنوز تنظیم نشده است.');
+      setShowSetupHelper(true);
+      return;
+    }
+
+    setLoading(true);
+    setError('');
+
+    try {
+      if (serverAdminReady) {
+        const res = await loginWithIdentifier(cleanId, password);
+        const { error: sessErr } = await supabase.auth.setSession({
+          access_token: res.accessToken,
+          refresh_token: res.refreshToken,
+        });
+        if (sessErr) throw sessErr;
+      } else {
+        if (!cleanId.includes('@')) {
+          throw new Error('برای ورود با نام کاربری باید متغیر SUPABASE_SERVICE_ROLE_KEY در سرور تنظیم شود، یا با ایمیل وارد شوید.');
+        }
+        const { error: signErr } = await supabase.auth.signInWithPassword({
+          email: cleanId.toLowerCase(),
+          password,
+        });
+        if (signErr) {
+          throw new Error('ایمیل یا رمز عبور اشتباه است یا حساب شما غیرفعال شده است.');
+        }
+      }
+
+      setIsAccessGranted(true);
+      setTimeout(() => {
+        onSuccess();
+      }, 650);
+    } catch (err: any) {
+      setError(err?.message || 'خطا در احراز هویت. لطفاً اطلاعات ورود را بررسی کنید.');
+    } finally {
+      setLoading(false);
+    }
+  };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto overflow-x-clip p-3 sm:p-6 pt-safe pb-safe bg-[#05070d] select-none text-slate-100 font-vazir dir-rtl">
-      {/* Static Gradient Horizon Background (Zero Scroll Repaint) */}
-      <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_35%,_var(--tw-gradient-stops))] from-cyan-950/35 via-[#05070d] to-[#020305]" />
-
-      {/* RETRACTABLE HYDRAULIC CUSTOMS DOORS */}
-      <motion.div
-        initial={isLoggingOut ? { x: '-102%', rotateY: -15 } : false}
-        animate={isAccessGranted ? { x: '-102%', rotateY: -15 } : { x: 0, rotateY: 0 }}
-        transition={{ duration: 1.2, ease: [0.77, 0, 0.175, 1], delay: isLoggingOut ? 0.1 : 0.4 }}
-        className="absolute top-0 bottom-0 left-0 w-[50.5%] z-30 bg-gradient-to-r from-[#0a0e17] via-[#0d1320] to-[#080c14] border-r-2 border-cyan-500/40 pointer-events-none shadow-[20px_0_50px_rgba(0,0,0,0.9)] overflow-hidden"
-        style={{ perspective: '1000px' }}
-      >
-        <div className="absolute top-0 bottom-0 right-0 w-3 bg-[repeating-linear-gradient(45deg,#f59e0b,#f59e0b_10px,#0f172a_10px,#0f172a_20px)] opacity-80 border-l border-amber-500/40" />
-      </motion.div>
-
-      <motion.div
-        initial={isLoggingOut ? { x: '102%', rotateY: 15 } : false}
-        animate={isAccessGranted ? { x: '102%', rotateY: 15 } : { x: 0, rotateY: 0 }}
-        transition={{ duration: 1.2, ease: [0.77, 0, 0.175, 1], delay: isLoggingOut ? 0.1 : 0.4 }}
-        className="absolute top-0 bottom-0 right-0 w-[50.5%] z-30 bg-gradient-to-l from-[#0a0e17] via-[#0d1320] to-[#080c14] border-l-2 border-cyan-500/40 pointer-events-none shadow-[-20px_0_50px_rgba(0,0,0,0.9)] overflow-hidden"
-        style={{ perspective: '1000px' }}
-      >
-        <div className="absolute top-0 bottom-0 left-0 w-3 bg-[repeating-linear-gradient(45deg,#f59e0b,#f59e0b_10px,#0f172a_10px,#0f172a_20px)] opacity-80 border-r border-amber-500/40" />
-      </motion.div>
-
-      {/* CENTRAL FLOATING CARD MODAL */}
-      <div className="relative z-40 w-full max-w-[430px] mx-4 px-2" style={{ perspective: '1200px' }}>
-        <AnimatePresence mode="wait">
-          {isLoggingOut ? (
-            /* LOGOUT GATE CLOSING MODAL CARD */
-            <motion.div
-              key="logout-card"
-              initial={{ opacity: 0, scale: 0.9 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0, scale: 0.95 }}
-              transition={{ duration: 0.3 }}
-              className="bg-slate-900/95 border border-rose-500/40 rounded-3xl p-8 text-center shadow-[0_25px_60px_-15px_rgba(244,63,94,0.3)] text-slate-100 space-y-6"
-            >
-              <div className="relative w-20 h-20 mx-auto">
-                <div className="relative w-full h-full rounded-full bg-rose-500/20 border border-rose-400/50 flex items-center justify-center text-rose-400">
-                  <Lock className="w-10 h-10 text-rose-400" />
-                </div>
-              </div>
-
-              <div>
-                <span className="inline-block px-3.5 py-1 rounded-full text-[11px] font-bold bg-rose-500/20 border border-rose-400/40 text-rose-300 mb-2">
-                  خروج امن
-                </span>
-                <h2 className="font-lalezar text-2xl text-slate-100 tracking-wide">
-                  بستن گیت‌های راهبند گمرک...
-                </h2>
-                <p className="text-xs text-slate-400 mt-1">
-                  قفل شدن ایمن راهبندهای مرزی، ابطال نشست و ثبت در لاگ
-                </p>
-              </div>
-
-              <div className="space-y-3">
-                <div className="w-full bg-slate-950 h-2.5 rounded-full overflow-hidden p-0.5 border border-rose-500/30">
-                  <motion.div
-                    initial={{ width: '0%' }}
-                    animate={{ width: '100%' }}
-                    transition={{ duration: 1.5, ease: 'easeInOut' }}
-                    className="h-full bg-gradient-to-r from-rose-500 via-amber-500 to-rose-400 rounded-full"
-                  />
-                </div>
-
-                <button
-                  type="button"
-                  onClick={() => {
-                    if (onLogoutComplete) onLogoutComplete();
-                  }}
-                  className="w-full mt-2 min-h-[44px] py-3 px-4 rounded-2xl bg-gradient-to-r from-cyan-400 via-cyan-500 to-blue-600 text-slate-950 font-black text-xs hover:from-cyan-300 hover:to-blue-500 transition-all shadow-lg shadow-cyan-500/25 flex items-center justify-center gap-2 cursor-pointer active:scale-95"
-                >
-                  <LogIn className="w-4 h-4" />
-                  <span>ورود مجدد به سامانه</span>
-                </button>
-              </div>
-            </motion.div>
-          ) : !isAccessGranted ? (
-            /* UNIFIED ACCESS CODE LOGIN CARD */
-            <motion.div
-              key="login-card"
-              initial={{ opacity: 0, scale: 0.94, y: 16 }}
-              animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.92, y: -20 }}
-              transition={{ duration: 0.3, ease: [0.16, 1, 0.3, 1] }}
-              className={`ios-glass-card ios-specular rounded-3xl p-6 sm:p-8 text-center shadow-[0_30px_70px_-15px_rgba(0,0,0,0.95)] overflow-hidden border border-white/20 ${
-                shake ? 'animate-shake' : ''
-              }`}
-            >
-              {/* Brand App Icon Emblem */}
-              <div className="w-20 h-20 mx-auto mb-3 rounded-2xl overflow-hidden border border-cyan-400/45 bg-[#071A21] shadow-[0_12px_30px_rgba(6,182,212,0.28)] flex items-center justify-center">
-                <img
-                  src="pwa-192x192.png"
-                  alt="مدیریت کارهای گمرک"
-                  className="w-full h-full object-cover"
-                />
-              </div>
-
-              <h1 className="font-lalezar text-2xl sm:text-3xl font-normal text-slate-100 tracking-wide">
+    <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto overflow-x-clip p-3 sm:p-6 pt-safe pb-safe bg-[#040711] select-none text-slate-100 font-vazir dir-rtl">
+      <div className="w-full max-w-[460px] my-auto space-y-4">
+        {/* Main Auth Card */}
+        <motion.div
+          initial={{ opacity: 0, y: 14 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.28, ease: 'easeOut' }}
+          className="ios-glass-card p-6 sm:p-8 border border-white/15 shadow-[0_24px_70px_rgba(0,0,0,0.85)] space-y-6"
+        >
+          {/* Brand Header */}
+          <div className="flex flex-col items-center text-center space-y-3">
+            <div className="w-16 h-16 rounded-2xl overflow-hidden border border-cyan-400/45 bg-[#071A21] shadow-lg shadow-cyan-500/15 flex items-center justify-center">
+              <img
+                src="pwa-192x192.png"
+                alt="لوگوی مدیریت کارهای گمرک"
+                className="w-full h-full object-cover"
+              />
+            </div>
+            <div>
+              <h1 className="font-lalezar text-2xl sm:text-3xl text-slate-100 tracking-wide">
                 مدیریت کارهای گمرک
               </h1>
-              <p className="text-[11px] font-mono text-cyan-300 mt-0.5">
-                Customs Task Management
+              <p className="text-xs text-slate-400 mt-1">
+                پلتفرم چندشرکتی مدیریت ورود، تجمیع، خروج و ترخیص ۹۰/۱۰
               </p>
-              <p className="text-xs text-slate-400 mt-2 font-medium">
-                کد دسترسی خود را برای ورود امن به سامانه وارد نمایید
-              </p>
+            </div>
+          </div>
 
-              {/* Lockout Notification Banner */}
-              {isLocked ? (
-                <div className="mt-5 p-4 rounded-2xl bg-rose-500/20 border border-rose-500/50 text-rose-200 text-xs space-y-2">
-                  <div className="flex items-center justify-center gap-2 font-bold text-rose-300">
-                    <ShieldAlert className="w-5 h-5 text-rose-400" />
-                    <span>حساب به دلیل حملات بروت‌فورس موقتاً قفل است</span>
-                  </div>
-                  <p className="text-[11px] text-slate-300">
-                    لطفاً تا پایان زمان شمارنده زیر صبور باشید:
-                  </p>
-                  <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-rose-950/60 border border-rose-500/40 text-rose-300 font-mono text-sm font-bold">
-                    <Clock className="w-4 h-4 text-rose-400" />
-                    <span>{lockoutSec} ثانیه</span>
-                  </div>
-                </div>
-              ) : (
-                /* Access Code Input Form */
-                <form onSubmit={handleSubmit} className="mt-6 space-y-4">
-                  <div className="text-right space-y-1.5">
-                    <div className="relative">
-                      <input
-                        type={showPassword ? 'text' : 'password'}
-                        value={accessCode}
-                        onChange={handleInput}
-                        placeholder="کد دسترسی (رمز عبور)..."
-                        autoFocus
-                        disabled={isLocked}
-                        maxLength={20}
-                        className="w-full bg-slate-950/75 border border-white/20 rounded-2xl py-3.5 px-4 pl-11 text-center text-lg font-bold text-cyan-300 outline-none focus:border-cyan-400 focus:ring-4 focus:ring-cyan-400/20 transition-colors shadow-[inset_0_2px_4px_rgba(0,0,0,0.6)] tracking-widest disabled:opacity-50"
-                      />
-                      <button
-                        type="button"
-                        onClick={() => setShowPassword(!showPassword)}
-                        className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-200 cursor-pointer p-1.5 transition-colors"
-                        title={showPassword ? 'مخفی کردن' : 'نمایش'}
-                      >
-                        {showPassword ? <EyeOff className="w-4.5 h-4.5" /> : <Eye className="w-4.5 h-4.5 text-cyan-400" />}
-                      </button>
+          {isLoggingOut ? (
+            <div className="py-8 flex flex-col items-center justify-center gap-3 text-center">
+              <Loader2 className="w-8 h-8 text-cyan-400 animate-spin" />
+              <p className="text-sm font-bold text-slate-200">در حال خروج امن از فضای کاری...</p>
+            </div>
+          ) : isAccessGranted ? (
+            <div className="py-8 flex flex-col items-center justify-center gap-3 text-center">
+              <div className="w-14 h-14 rounded-2xl bg-emerald-500/20 border border-emerald-400/40 flex items-center justify-center text-emerald-300">
+                <CheckCircle2 className="w-8 h-8" />
+              </div>
+              <p className="font-lalezar text-xl text-emerald-300">ورود تایید شد</p>
+              <p className="text-xs text-slate-400">در حال بارگذاری فضای کاری شرکت شما...</p>
+            </div>
+          ) : (
+            <>
+              {/* Unclaimed Legacy Company Migration Callout */}
+              {hasUnclaimedLegacy && (
+                <div className="rounded-2xl bg-amber-500/12 border border-amber-400/40 p-4 space-y-2.5">
+                  <div className="flex items-start gap-2.5">
+                    <Sparkles className="w-5 h-5 text-amber-300 shrink-0 mt-0.5" />
+                    <div className="text-xs space-y-1">
+                      <p className="font-bold text-amber-200">
+                        داده‌های قبلی سامانه شناسایی شد
+                      </p>
+                      <p className="text-slate-300 leading-relaxed">
+                        سوابق موجود به فضای کاری «{legacyCompanyName || 'شرکت اولیه'}» منتقل شده‌اند. برای حفظ و دسترسی به تمام اسناد قبلی، حساب مالک شرکت را تکمیل کنید.
+                      </p>
                     </div>
                   </div>
-
-                  {error && (
-                    <motion.div
-                      initial={{ opacity: 0, y: -4 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      className="flex items-center justify-center gap-1.5 text-xs text-rose-200 bg-rose-500/20 border border-rose-500/40 py-2.5 px-3 rounded-2xl font-medium"
-                    >
-                      <AlertCircle className="w-4 h-4 shrink-0 text-rose-400" />
-                      <span>{error}</span>
-                    </motion.div>
-                  )}
-
                   <button
-                    type="submit"
-                    disabled={!accessCode || isLocked}
-                    className="w-full min-h-[46px] py-3.5 px-5 rounded-2xl bg-gradient-to-r from-cyan-400 via-cyan-500 to-blue-600 text-slate-950 font-black text-sm hover:from-cyan-300 hover:to-blue-500 transition-all shadow-[0_10px_30px_rgba(6,182,212,0.35)] flex items-center justify-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed active:scale-97 cursor-pointer"
+                    type="button"
+                    onClick={() => onStartOnboarding('claim_legacy')}
+                    className="w-full min-h-[44px] px-4 py-2 rounded-xl ios-glass-btn-primary text-xs font-black flex items-center justify-center gap-2 cursor-pointer"
                   >
-                    <span>احراز هویت و ورود</span>
+                    <span>تکمیل راه‌اندازی و ثبت مالک شرکت قبلی</span>
                     <ArrowLeft className="w-4 h-4" />
                   </button>
-                </form>
-              )}
-
-              {/* Default Credentials Helper Note (Only if Default is active) */}
-              {isDefault && !isLocked && (
-                <div className="mt-4 p-2.5 rounded-xl bg-white/5 border border-white/10 text-[11px] text-slate-300 space-y-1 text-right">
-                  <div className="flex items-center gap-1 text-cyan-300 font-bold">
-                    <Info className="w-3.5 h-3.5" />
-                    <span>کدهای ورود پیش‌فرض سیستم:</span>
-                  </div>
-                  <div className="flex justify-between text-[11px] text-slate-300 pt-0.5">
-                    <span>مدیر (دسترسی کامل): <strong className="text-cyan-300 font-mono">12345</strong></span>
-                    <span>ناظر (مشاهده): <strong className="text-amber-300 font-mono">54321</strong></span>
-                  </div>
-                  <p className="text-[10px] text-slate-400 mt-1">
-                    * پس از ورود می‌توانید از بخش امنیت، این کدها را به رمزهای شخصی تغییر دهید.
-                  </p>
                 </div>
               )}
 
-              {/* Minimalist Security Note */}
-              <div className="mt-4 pt-3 border-t border-white/10 flex items-center justify-center gap-2 text-[11px] text-slate-400">
-                <Sparkles className="w-3.5 h-3.5 text-cyan-400" />
-                <span>محافظت‌شده با رمزنگاری SHA-256 و فایروال محلی</span>
-              </div>
-            </motion.div>
-          ) : (
-            /* SLEEK SUCCESS LOADING STATE */
-            <motion.div
-              key="loading-card"
-              initial={{ opacity: 0, scale: 0.9 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0, scale: 1.05 }}
-              transition={{ duration: 0.4, ease: 'easeOut' }}
-              className="bg-slate-900/95 border border-emerald-500/40 rounded-3xl p-8 text-center shadow-[0_25px_60px_-15px_rgba(16,185,129,0.3)] text-slate-100 space-y-6"
-            >
-              <div className="relative w-20 h-20 mx-auto">
-                <div className="relative w-full h-full rounded-full bg-emerald-500/20 border border-emerald-400/50 flex items-center justify-center text-emerald-400 shadow-[0_0_30px_rgba(52,211,153,0.45)]">
-                  <CheckCircle2 className="w-10 h-10 text-emerald-400" />
+              {/* Login Form */}
+              <form onSubmit={handleSubmit} className="space-y-4">
+                <div className="space-y-1.5">
+                  <label className="block text-xs font-semibold text-slate-300">
+                    ایمیل یا نام کاربری
+                  </label>
+                  <div className="relative">
+                    <Mail className="w-4 h-4 text-slate-400 absolute right-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                    <input
+                      type="text"
+                      value={identifier}
+                      onChange={(e) => {
+                        setIdentifier(e.target.value);
+                        if (error) setError('');
+                      }}
+                      autoComplete="username"
+                      placeholder="name@company.com یا نام کاربری"
+                      dir="ltr"
+                      className="w-full min-h-[46px] pr-10 pl-3.5 py-2.5 rounded-xl glass-input text-sm text-left outline-none"
+                    />
+                  </div>
                 </div>
-              </div>
 
-              <div>
-                <span className="inline-block px-4 py-1.5 rounded-full text-xs font-bold bg-emerald-500/20 border border-emerald-400/40 text-emerald-300 mb-2 shadow-sm">
-                  احراز هویت موفق
+                <div className="space-y-1.5">
+                  <label className="block text-xs font-semibold text-slate-300">
+                    رمز عبور
+                  </label>
+                  <div className="relative">
+                    <Lock className="w-4 h-4 text-slate-400 absolute right-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                    <input
+                      type={showPassword ? 'text' : 'password'}
+                      value={password}
+                      onChange={(e) => {
+                        setPassword(e.target.value);
+                        if (error) setError('');
+                      }}
+                      autoComplete="current-password"
+                      placeholder="••••••••"
+                      dir="ltr"
+                      className="w-full min-h-[46px] pr-10 pl-11 py-2.5 rounded-xl glass-input text-sm text-left outline-none"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowPassword((prev) => !prev)}
+                      className="absolute left-2 top-1/2 -translate-y-1/2 min-w-[36px] min-h-[36px] flex items-center justify-center text-slate-400 hover:text-slate-200 cursor-pointer"
+                      aria-label={showPassword ? 'مخفی کردن رمز' : 'نمایش رمز'}
+                    >
+                      {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                    </button>
+                  </div>
+                </div>
+
+                {error && (
+                  <div className="rounded-xl bg-rose-500/15 border border-rose-500/40 px-3.5 py-2.5 text-xs text-rose-200 flex items-start gap-2">
+                    <AlertCircle className="w-4 h-4 text-rose-400 shrink-0 mt-0.5" />
+                    <span className="leading-relaxed">{error}</span>
+                  </div>
+                )}
+
+                <button
+                  type="submit"
+                  disabled={loading}
+                  className="w-full min-h-[48px] px-5 py-3 rounded-xl ios-glass-btn-cyan text-sm font-black flex items-center justify-center gap-2 cursor-pointer disabled:opacity-60"
+                >
+                  {loading ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      <span>در حال ورود...</span>
+                    </>
+                  ) : (
+                    <>
+                      <LogIn className="w-4 h-4" />
+                      <span>ورود به فضای کاری</span>
+                    </>
+                  )}
+                </button>
+              </form>
+
+              {/* Divider */}
+              <div className="relative py-1">
+                <div className="h-px bg-white/10" />
+                <span className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 px-3 bg-[#09101f] text-[11px] text-slate-400 whitespace-nowrap">
+                  شرکت جدید هستید؟
                 </span>
-                <h2 className="font-lalezar text-2xl text-slate-100 tracking-wide">
-                  مجوز ورود صادر شد...
-                </h2>
-                <p className="text-xs text-slate-400 mt-1">تأیید امضای دیجیتال و بارگذاری دسترسی‌ها</p>
               </div>
 
-              <div className="space-y-2">
-                <div className="w-full bg-slate-950 h-2.5 rounded-full overflow-hidden p-0.5 border border-emerald-500/30">
-                  <motion.div
-                    initial={{ width: '0%' }}
-                    animate={{ width: '100%' }}
-                    transition={{ duration: 1.2, ease: 'easeInOut' }}
-                    className="h-full bg-gradient-to-r from-emerald-400 via-teal-300 to-cyan-400 rounded-full shadow-[0_0_15px_rgba(52,211,153,0.9)]"
-                  />
-                </div>
+              {/* Register New Company CTA */}
+              <button
+                type="button"
+                onClick={() => onStartOnboarding('create')}
+                className="w-full min-h-[48px] px-4 py-3 rounded-xl bg-white/[0.05] hover:bg-white/[0.09] border border-cyan-400/35 text-cyan-200 text-xs sm:text-sm font-bold flex items-center justify-center gap-2 transition-colors cursor-pointer"
+              >
+                <Building2 className="w-4 h-4 text-cyan-400 shrink-0" />
+                <span>ثبت شرکت جدید و راه‌اندازی فضای کاری</span>
+              </button>
+
+              {/* Supabase Setup Status & SQL Migration Access */}
+              <div className="pt-1 flex items-center justify-between gap-2 text-[11px] text-slate-400">
+                <span className="flex items-center gap-1.5">
+                  <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
+                  <span>احراز هویت امن Supabase Auth</span>
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setShowSetupHelper((prev) => !prev)}
+                  className="text-cyan-300 hover:text-cyan-200 underline underline-offset-4 cursor-pointer"
+                >
+                  {showSetupHelper ? 'بستن راهنمای سرور' : 'پیکربندی Supabase و SQL'}
+                </button>
               </div>
-            </motion.div>
+            </>
           )}
-        </AnimatePresence>
+        </motion.div>
+
+        {/* Collapsible Supabase Connection & SQL Migration Helper */}
+        {(showSetupHelper || !clientConfigured || serverAdminReady === false) && !isLoggingOut && !isAccessGranted && (
+          <div className="glass-panel p-4 sm:p-5 space-y-3.5 text-xs border border-white/12">
+            <div className="flex items-center justify-between gap-2">
+              <div className="flex items-center gap-2 font-bold text-slate-200">
+                <Database className="w-4 h-4 text-cyan-400" />
+                <span>وضعیت اتصال Supabase چندشرکتی</span>
+              </div>
+              <button
+                type="button"
+                onClick={handleCopySql}
+                className="min-h-[34px] px-3 py-1 rounded-lg bg-cyan-500/15 border border-cyan-400/35 text-cyan-200 font-bold flex items-center gap-1.5 cursor-pointer"
+              >
+                {copiedSql ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
+                <span>{copiedSql ? 'اسکریپت SQL کپی شد' : 'کپی اسکریپت مهاجرت SQL'}</span>
+              </button>
+            </div>
+
+            <div className="grid grid-cols-2 gap-2 text-[11px]">
+              <div className="p-2.5 rounded-xl bg-white/[0.03] border border-white/8">
+                <span className="text-slate-400 block">اتصال کلاینت (Anon):</span>
+                <span className={clientConfigured ? 'text-emerald-300 font-bold' : 'text-amber-300 font-bold'}>
+                  {clientConfigured ? 'متصل' : 'نیاز به تنظیم'}
+                </span>
+              </div>
+              <div className="p-2.5 rounded-xl bg-white/[0.03] border border-white/8">
+                <span className="text-slate-400 block">سرویس ادمین سرور:</span>
+                <span className={serverAdminReady ? 'text-emerald-300 font-bold' : 'text-amber-300 font-bold'}>
+                  {serverAdminReady === null ? 'در حال بررسی...' : serverAdminReady ? 'آماده' : 'نیاز به تنظیم Secret'}
+                </span>
+              </div>
+            </div>
+
+            {serverAdminReady === false && (
+              <p className="text-[11px] text-amber-200/90 leading-relaxed bg-amber-500/10 border border-amber-500/30 rounded-xl p-2.5">
+                برای ثبت شرکت جدید و ساخت فوری کاربران، متغیرهای <code className="font-mono">SUPABASE_URL</code> و{' '}
+                <code className="font-mono">SUPABASE_SERVICE_ROLE_KEY</code> را در بخش Secrets سرور تنظیم کرده و اسکریپت SQL را در Supabase SQL Editor اجرا کنید.
+              </p>
+            )}
+
+            {showSetupHelper && (
+              <form onSubmit={handleSaveClientSupabase} className="space-y-2.5 pt-1 border-t border-white/10">
+                <input
+                  type="url"
+                  value={sbUrl}
+                  onChange={(e) => setSbUrl(e.target.value)}
+                  placeholder="https://xxxxx.supabase.co"
+                  dir="ltr"
+                  className="w-full min-h-[40px] px-3 py-2 rounded-xl glass-input text-xs text-left outline-none"
+                />
+                <input
+                  type="password"
+                  value={sbAnonKey}
+                  onChange={(e) => setSbAnonKey(e.target.value)}
+                  placeholder="Supabase Anon Public Key"
+                  dir="ltr"
+                  className="w-full min-h-[40px] px-3 py-2 rounded-xl glass-input text-xs text-left outline-none"
+                />
+                <button
+                  type="submit"
+                  className="w-full min-h-[40px] rounded-xl ios-glass-btn text-cyan-200 font-bold text-xs cursor-pointer"
+                >
+                  ذخیره اتصال کلاینت Supabase
+                </button>
+              </form>
+            )}
+          </div>
+        )}
       </div>
     </div>
   );
