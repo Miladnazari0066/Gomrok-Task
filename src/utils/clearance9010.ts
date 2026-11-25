@@ -93,18 +93,98 @@ export const CLEARANCE_STATUS_META: Record<
 
 /**
  * Exact 90% / 10% integer split rule (never decimal):
- * firstStagePallets = Math.floor(totalPallets * 0.9)
+ * firstStagePallets = Math.floor((totalPallets * 90) / 100)
  * remainingPallets = totalPallets - firstStagePallets
  */
 export function calculateSplit9010(totalPallets: number): Split9010Result {
   const safeTotal = Math.max(0, Math.floor(Number(totalPallets) || 0));
-  const firstStagePallets = Math.floor(safeTotal * 0.9);
+  const firstStagePallets = Math.floor((safeTotal * 90) / 100);
   const remainingPallets = safeTotal - firstStagePallets;
   return {
     totalPallets: safeTotal,
     firstStagePallets,
     remainingPallets,
   };
+}
+
+export interface PartialExitCalculation {
+  totalPallets: number;
+  exitPercent: number;
+  exitPallets: number;
+  remainingPercent: number;
+  remainingPallets: number;
+}
+
+/**
+ * Exact floor-based integer pallet calculation for percentage partial exits.
+ * Example: 90% of 101 pallets -> exitPallets = 90, remainingPallets = 11.
+ */
+export function calculatePartialExitByPercent(
+  totalPallets: number,
+  exitPercent: number
+): PartialExitCalculation {
+  const safeTotal = Math.max(0, Math.floor(Number(totalPallets) || 0));
+  const clampedPct = Math.min(100, Math.max(0, Number(exitPercent) || 0));
+  const exitPallets = Math.min(
+    safeTotal,
+    Math.max(0, Math.floor((safeTotal * clampedPct + 1e-9) / 100))
+  );
+  const remainingPallets = Math.max(0, safeTotal - exitPallets);
+  const cleanPct = Math.round(clampedPct * 10) / 10;
+  const remainingPercent = Math.max(0, Math.round((100 - cleanPct) * 10) / 10);
+
+  return {
+    totalPallets: safeTotal,
+    exitPercent: cleanPct,
+    exitPallets,
+    remainingPercent,
+    remainingPallets,
+  };
+}
+
+/**
+ * Normalize a File Number (شماره پرونده) for reliable grouping and comparison.
+ */
+export function normalizeFileNumber(file: string | undefined | null): string {
+  return en(String(file || '').trim());
+}
+
+/**
+ * Collect all EntryDoc IDs that already belong to any consolidation batch.
+ */
+export function getConsolidatedEntryDocIds(batches: Array<{ docIds: string[] }>): Set<string> {
+  const ids = new Set<string>();
+  for (const b of batches) {
+    for (const id of b.docIds || []) {
+      ids.add(id);
+    }
+  }
+  return ids;
+}
+
+/**
+ * Filter EntryDocs to only standalone (non-consolidated) documents for individual exit selection.
+ */
+export function filterStandaloneEntryDocs<T extends { id: string }>(
+  allDocs: T[],
+  batches: Array<{ docIds: string[] }>,
+  preserveDocId?: string
+): T[] {
+  const consolidatedIds = getConsolidatedEntryDocIds(batches);
+  return allDocs.filter((d) => !consolidatedIds.has(d.id) || (preserveDocId && d.id === preserveDocId));
+}
+
+/**
+ * Group EntryDocs strictly by normalized File Number (شماره پرونده).
+ */
+export function groupEntryDocsByFile<T extends { file?: string }>(docs: T[]): Record<string, T[]> {
+  const grouped: Record<string, T[]> = {};
+  for (const d of docs) {
+    const key = normalizeFileNumber(d.file) || '—';
+    if (!grouped[key]) grouped[key] = [];
+    grouped[key].push(d);
+  }
+  return grouped;
 }
 
 /**

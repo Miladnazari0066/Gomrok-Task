@@ -2495,7 +2495,7 @@ export default function App() {
                   }`}
                 >
                   <PackageCheck className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-cyan-400" />
-                  <span>ثبت و مدیریت کوتاژ</span>
+                  <span>ثبت ورود کالا</span>
                 </motion.button>
 
                 <motion.button
@@ -2508,7 +2508,7 @@ export default function App() {
                   }`}
                 >
                   <Layers className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-amber-400" />
-                  <span>تجمیع کوتاژهای انبار</span>
+                  <span>تجمیع</span>
                 </motion.button>
               </div>
 
@@ -2545,7 +2545,7 @@ export default function App() {
                     }`}
                   >
                     <PlusCircle className="w-4 h-4 text-amber-400" />
-                    <span>{editingDoc ? 'ویرایش کوتاژ' : 'ثبت کوتاژ جدید'}</span>
+                    <span>{editingDoc ? 'ویرایش کوتاژ' : 'ثبت کوتاژ ورودی جدید'}</span>
                   </button>
                 </div>
 
@@ -2868,7 +2868,7 @@ export default function App() {
                   }`}
                 >
                   <LogOut className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-blue-400" />
-                  <span>ثبت کوتاژ و ترخیص ۹۰/۱۰</span>
+                  <span>ترخیص کالا</span>
                 </motion.button>
 
                 {activePermissions.canViewLab && (
@@ -2896,44 +2896,6 @@ export default function App() {
                   </h2>
                 </div>
 
-                {/* Exit-Exclusive 90% / 10% Clearance & Sata Quick-Launch Strip */}
-                {docs.length > 0 && (
-                  <div className="glass-panel p-3.5 sm:p-4 rounded-2xl border border-amber-400/25 space-y-2.5">
-                    <div className="flex items-center justify-between gap-2 flex-wrap">
-                      <div className="flex items-center gap-2 text-xs sm:text-sm font-bold text-amber-200">
-                        <ShieldCheck className="w-4 h-4 text-amber-400 shrink-0" />
-                        <span>مدیریت ترخیص ۹۰٪ / ۱۰٪، تایید ساتا و خروج فیزیکی (مختص مرحله خروج)</span>
-                      </div>
-                      <span className="text-[11px] text-slate-400 font-mono">
-                        {fa(docs.filter((d) => (d.pallets || 0) > 0).length)} محموله دارای پالت
-                      </span>
-                    </div>
-                    <div className="flex items-center gap-2 overflow-x-auto no-scrollbar pb-1">
-                      {docs.slice(0, 12).map((entryItem) => {
-                        const bal = computePalletBalances(entryItem, physicalExits);
-                        const st = deriveClearanceStatus(entryItem, physicalExits);
-                        const meta = CLEARANCE_STATUS_META[st];
-                        return (
-                          <button
-                            key={entryItem.id}
-                            type="button"
-                            onClick={() => setClearanceDrawerDocId(entryItem.id)}
-                            className="shrink-0 min-h-[44px] flex items-center gap-2 px-3 py-2 rounded-xl bg-slate-900/80 hover:bg-slate-800/90 border border-white/12 hover:border-amber-400/50 text-xs transition-colors cursor-pointer"
-                          >
-                            <span className="font-bold text-slate-100 font-mono">کوتاژ {fa(entryItem.cottage)}</span>
-                            <span className="text-[11px] text-cyan-300 font-mono tabular-nums">
-                              ۹۰٪:{fa(bal.firstStagePallets)} / ۱۰٪:{fa(bal.remainingPallets)}
-                            </span>
-                            <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold border ${meta.badgeCls}`}>
-                              {meta.shortLabel}
-                            </span>
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </div>
-                )}
-
                 {/* Mobile View Mode Switcher (< lg) */}
                 <div className="lg:hidden flex items-center gap-1.5 p-1 bg-white/5 border border-white/10 rounded-2xl">
                   <button
@@ -2958,7 +2920,7 @@ export default function App() {
                     }`}
                   >
                     <PlusCircle className="w-4 h-4 text-amber-400" />
-                    <span>{editingExitDoc ? 'ویرایش سند خروج' : 'ثبت سند خروج جدید'}</span>
+                    <span>{editingExitDoc ? 'ویرایش کوتاژ خروجی' : 'ثبت کوتاژ خروجی جدید'}</span>
                   </button>
                 </div>
 

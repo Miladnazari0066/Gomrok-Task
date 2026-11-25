@@ -109,7 +109,10 @@ export const ExitCard: React.FC<ExitCardProps> = ({
   else if (!doc.invoice.paid) stage = 6;
   else stage = 7; // Customs Exit Procedures Done
 
-  const isPhysicallyAndFinanciallyClosed = linkedEntryDoc ? Boolean(linkedEntryDoc.clearance?.closure?.closed) : true;
+  const isPartialDoc = Boolean(doc.partialExit?.isPartial);
+  const isPhysicallyAndFinanciallyClosed = isPartialDoc
+    ? (linkedEntryDoc ? Boolean(linkedEntryDoc.clearance?.closure?.closed) : true)
+    : true;
 
   const STAGES_CONFIG: Record<number, { label: string; badgeCls: string; color: string }> = {
     0: { label: 'در انتظار تعیین مسیر', badgeCls: 'bg-amber-500/10 border-amber-500/40 text-amber-400', color: '#f59e0b' },
@@ -228,13 +231,17 @@ export const ExitCard: React.FC<ExitCardProps> = ({
               تجمیع {doc.batchId}
             </span>
           )}
-          {doc.partialExit?.isPartial && (
+          {doc.partialExit?.isPartial ? (
             <span className="hidden md:inline-flex items-center gap-1.5 px-3 py-1 rounded-xl bg-gradient-to-r from-amber-500/20 via-orange-500/15 to-emerald-500/15 border border-amber-400/50 text-amber-200 text-xs font-bold">
               <Percent className="w-3.5 h-3.5 text-amber-400 shrink-0" />
               <span>خروج {fa(doc.partialExit.exitPercent)}٪</span>
               <span className="text-emerald-300 font-mono">({fa(doc.partialExit.exitPallets)} پالت)</span>
               <span className="text-slate-500 font-normal">|</span>
               <span className="text-amber-300/90 font-medium">مانده: {fa(doc.partialExit.remainingPercent)}٪ ({fa(doc.partialExit.remainingPallets)} پالت)</span>
+            </span>
+          ) : (
+            <span className="hidden md:inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-emerald-500/15 border border-emerald-400/40 text-emerald-300 text-xs font-bold">
+              خروج کامل ۱۰۰٪
             </span>
           )}
         </div>
@@ -300,7 +307,7 @@ export const ExitCard: React.FC<ExitCardProps> = ({
           )}
         </div>
 
-        {linkedEntryDoc && linkedBalance && (
+        {isPartialDoc && linkedEntryDoc && linkedBalance && (
           <div className="flex items-center justify-between gap-2 px-2.5 py-1.5 rounded-xl bg-slate-950/65 border border-white/10 text-[11px]">
             <span className="font-mono text-emerald-300">
               خروج: {fa(linkedBalance.totalExited)}/{fa(linkedBalance.totalPallets)} پالت
@@ -386,8 +393,8 @@ export const ExitCard: React.FC<ExitCardProps> = ({
         )}
       </div>
 
-      {/* Linked EntryDoc 90/10 Status Strip */}
-      {linkedEntryDoc && linkedBalance && linkedStatus && (
+      {/* Linked EntryDoc 90/10 Status Strip (only for partial exits) */}
+      {isPartialDoc && linkedEntryDoc && linkedBalance && linkedStatus && (
         <div className="mb-4 p-3 rounded-2xl bg-slate-950/65 border border-white/10 flex items-center justify-between gap-2.5 flex-wrap text-xs relative z-10">
           <div className="flex items-center gap-2 flex-wrap">
             <span className="text-slate-400">کوتاژ مرجع {fa(linkedEntryDoc.cottage)}:</span>

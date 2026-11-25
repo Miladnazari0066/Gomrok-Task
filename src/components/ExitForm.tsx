@@ -4,7 +4,12 @@ import { ExitDoc, Batch, JalaliDate, EntryDoc } from '../types';
 import { JalaliDatePicker } from './JalaliDatePicker';
 import { ComboboxField } from './ComboboxField';
 import { en, todayJ, fa } from '../utils/jalali';
-import { calculateSplit9010, inferMdfThickness } from '../utils/clearance9010';
+import {
+  calculatePartialExitByPercent,
+  filterStandaloneEntryDocs,
+  inferMdfThickness,
+  normalizeFileNumber,
+} from '../utils/clearance9010';
 
 interface ExitFormProps {
   editingDoc: ExitDoc | null;
@@ -62,22 +67,24 @@ export const ExitForm: React.FC<ExitFormProps> = ({
   const [batchId, setBatchId] = useState('');
   const [entryDocId, setEntryDocId] = useState('');
 
-  // Partial / Percentage Exit States
+  // Partial / Percentage Exit States (default: OFF = 100% complete exit)
   const [isPartialExit, setIsPartialExit] = useState(false);
-  const [totalPallets, setTotalPallets] = useState('100');
+  const [totalPallets, setTotalPallets] = useState('40');
   const [exitPercent, setExitPercent] = useState('90');
-  const [exitPallets, setExitPallets] = useState('90');
+  const [exitPallets, setExitPallets] = useState('36');
 
   const [errors, setErrors] = useState<Record<string, string>>({});
 
   const finalizedBatches = batches.filter((b) => b.finalized);
+  const pendingBatches = batches.filter((b) => !b.finalized);
+  // Strictly exclude EntryDocs that are already consolidated into any batch
+  const standaloneDocs = filterStandaloneEntryDocs(allDocs, batches, editingDoc?.entryDocId);
 
-  const computeIntPartialPallets = (tot: number, pct: number) => {
-    const cleanTot = Math.max(0, Math.floor(tot));
-    if (Math.round(pct) === 90) {
-      return calculateSplit9010(cleanTot).firstStagePallets;
-    }
-    return Math.floor((cleanTot * pct) / 100);
+  const getBatchMetrics = (b: Batch) => {
+    const memberDocs = allDocs.filter((d) => b.docIds.includes(d.id));
+    const sumPallets = memberDocs.reduce((acc, d) => acc + Math.max(0, Math.floor(d.pallets || 0)), 0);
+    const sumTrailers = memberDocs.reduce((acc, d) => acc + Math.max(0, Math.floor(d.trailers || 0)), 0);
+    return { memberDocs, sumPallets, sumTrailers };
   };
 
   useEffect(() => {
@@ -96,18 +103,20 @@ export const ExitForm: React.FC<ExitFormProps> = ({
       setBatchId(editingDoc.batchId || '');
       setEntryDocId(editingDoc.entryDocId || '');
 
-      // Load partial exit info if exists
       if (editingDoc.partialExit?.isPartial) {
         setIsPartialExit(true);
-        setTotalPallets(String(editingDoc.partialExit.totalPallets || '100'));
-        setExitPercent(String(editingDoc.partialExit.exitPercent || '90'));
-        setExitPallets(String(editingDoc.partialExit.exitPallets || editingDoc.pallets || '90'));
+        const tot = Math.max(0, Math.floor(editingDoc.partialExit.totalPallets || editingDoc.pallets || 0));
+        const pct = editingDoc.partialExit.exitPercent || 90;
+        const exP = Math.max(0, Math.floor(editingDoc.partialExit.exitPallets ?? editingDoc.pallets ?? 0));
+        setTotalPallets(String(tot));
+        setExitPercent(String(pct));
+        setExitPallets(String(exP));
       } else {
         setIsPartialExit(false);
-        const totVal = Math.max(0, Math.floor(editingDoc.pallets || 100));
+        const totVal = Math.max(0, Math.floor(editingDoc.pallets || 0));
         setTotalPallets(String(totVal));
         setExitPercent('90');
-        setExitPallets(String(calculateSplit9010(totVal).firstStagePallets));
+        setExitPallets(String(calculatePartialExitByPercent(totVal, 90).exitPallets));
       }
       setErrors({});
     } else {
@@ -125,129 +134,189 @@ export const ExitForm: React.FC<ExitFormProps> = ({
       setBatchId('');
       setEntryDocId('');
       setIsPartialExit(false);
-      setTotalPallets('100');
+      setTotalPallets('40');
       setExitPercent('90');
-      setExitPallets('90');
+      setExitPallets('36');
       setErrors({});
     }
   }, [editingDoc]);
 
-  // Direct link to Entry cottage
-  const handleEntryDocSelect = (docId: string) => {
-    setEntryDocId(docId);
-    const matched = allDocs.find((d) => d.id === docId);
-    if (!matched) return;
+  const applyPalletsFromSource = (totP: number) => {
+    const cleanTot = Math.max(0, Math.floor(totP));
+    setTotalPallets(String(cleanTot));
+    const parsedPct = parseFloat(en(exitPercent));
+    const safePct = parsedPct > 0 && parsedPct < 100 ? parsedPct : 90;
+    const calc = calculatePartialExitByPercent(cleanTot, safePct);
+    setExitPallets(String(calc.exitPallets));
+    // Default (OFF) = 100% complete exit; ON = floored partial exit
+    setPallets(String(isPartialExit ? calc.exitPallets : cleanTot));
+  };
 
-    if (!cottage) setCottage(matched.cottage);
-    if (!bl) setBl(matched.bl);
-    if (!file) setFile(matched.file);
-    if (!importer) setImporter(matched.importer);
-    if (!carrier) setCarrier(matched.carrier);
-    if (!goods) setGoods(matched.goods);
-    if (!brand && matched.brand) setBrand(matched.brand);
-    if (!mdfThickness) setMdfThickness(matched.mdfThickness || inferMdfThickness(matched.goods));
+  // Unified top selector: Consolidated Batch OR non-consolidated standalone File
+  // Never overwrites manual Exit Kootazh (cottage) or Exit B/L (bl)
+  const sourceSelectValue = batchId ? `batch:${batchId}` : entryDocId ? `doc:${entryDocId}` : '';
 
-    const linkedBatch = batches.find((b) => b.finalized && b.docIds.includes(matched.id));
-    if (linkedBatch && !batchId) {
-      setBatchId(String(linkedBatch.id));
+  const handleSourceSelect = (val: string) => {
+    setErrors((prev) => {
+      if (!prev.batchId) return prev;
+      const next = { ...prev };
+      delete next.batchId;
+      return next;
+    });
+
+    if (!val) {
+      setBatchId('');
+      setEntryDocId('');
+      return;
     }
 
-    const totP = Math.max(0, Math.floor(matched.pallets || 0));
-    if (totP > 0) {
-      setTotalPallets(String(totP));
-      const pct = parseFloat(exitPercent) || 90;
-      const calculatedExit = computeIntPartialPallets(totP, pct);
-      setExitPallets(String(calculatedExit));
-      setPallets(String(isPartialExit ? calculatedExit : totP));
+    if (val.startsWith('batch:')) {
+      const bId = val.slice('batch:'.length);
+      setBatchId(bId);
+      setEntryDocId('');
+
+      const selectedBatch = batches.find((b) => String(b.id) === bId);
+      if (!selectedBatch) return;
+
+      const { memberDocs, sumPallets, sumTrailers } = getBatchMetrics(selectedBatch);
+      const batchFile = normalizeFileNumber(selectedBatch.file || memberDocs[0]?.file);
+      if (batchFile) setFile(batchFile);
+
+      const distinctGoods = Array.from(
+        new Set(memberDocs.map((d) => (d.goods || '').trim()).filter(Boolean))
+      ).join(' / ');
+      const resolvedGoods = selectedBatch.goods || distinctGoods;
+      if (resolvedGoods) setGoods(resolvedGoods);
+
+      const firstImporter = memberDocs.find((d) => d.importer)?.importer;
+      if (firstImporter) setImporter(firstImporter);
+
+      const firstCarrier = memberDocs.find((d) => d.carrier)?.carrier;
+      if (firstCarrier) setCarrier(firstCarrier);
+
+      const distinctBrands = Array.from(
+        new Set(memberDocs.map((d) => (d.brand || '').trim()).filter(Boolean))
+      ).join(' / ');
+      if (distinctBrands) setBrand(distinctBrands);
+
+      const firstThickness =
+        memberDocs.find((d) => d.mdfThickness)?.mdfThickness || inferMdfThickness(resolvedGoods);
+      if (firstThickness) setMdfThickness(firstThickness);
+
+      if (sumTrailers > 0) setTrailers(String(sumTrailers));
+      applyPalletsFromSource(sumPallets);
+      return;
+    }
+
+    if (val.startsWith('doc:')) {
+      const docId = val.slice('doc:'.length);
+      setEntryDocId(docId);
+      setBatchId('');
+
+      const matched = allDocs.find((d) => d.id === docId);
+      if (!matched) return;
+
+      if (matched.file) setFile(normalizeFileNumber(matched.file));
+      if (matched.importer) setImporter(matched.importer);
+      if (matched.carrier) setCarrier(matched.carrier);
+      if (matched.goods) setGoods(matched.goods);
+      if (matched.brand) setBrand(matched.brand);
+      const thick = matched.mdfThickness || inferMdfThickness(matched.goods);
+      if (thick) setMdfThickness(thick);
+      if (matched.trailers > 0) setTrailers(String(matched.trailers));
+
+      applyPalletsFromSource(matched.pallets || 0);
     }
   };
 
-  // When batch is selected, auto-populate goods, file, and total pallets
-  const handleBatchSelect = (bId: string) => {
-    setBatchId(bId);
-    const selectedBatch = batches.find((b) => String(b.id) === bId);
-    if (selectedBatch) {
-      if (selectedBatch.goods) setGoods(selectedBatch.goods);
-      if (selectedBatch.file) setFile(selectedBatch.file);
-
-      if (allDocs && allDocs.length > 0) {
-        const batchDocs = allDocs.filter((d) => selectedBatch.docIds.includes(d.id));
-        if (batchDocs.length === 1 && !entryDocId) {
-          setEntryDocId(batchDocs[0].id);
-        }
-        const totalPalletsInBatch = batchDocs.reduce((acc, d) => acc + Math.max(0, Math.floor(d.pallets || 0)), 0);
-        if (totalPalletsInBatch > 0) {
-          setTotalPallets(String(totalPalletsInBatch));
-          const pct = parseFloat(exitPercent) || 90;
-          const calculatedExit = computeIntPartialPallets(totalPalletsInBatch, pct);
-          setExitPallets(String(calculatedExit));
-          if (isPartialExit) {
-            setPallets(String(calculatedExit));
-          } else {
-            setPallets(String(totalPalletsInBatch));
-          }
-        }
-      }
-    }
+  // Sync full 100% pallets input with totalPallets when partial exit is OFF
+  const handleFullPalletsChange = (val: string) => {
+    setPallets(val);
+    const cleanTot = Math.max(0, Math.floor(parseFloat(en(val)) || 0));
+    setTotalPallets(String(cleanTot));
+    const parsedPct = parseFloat(en(exitPercent));
+    const safePct = parsedPct > 0 && parsedPct < 100 ? parsedPct : 90;
+    setExitPallets(String(calculatePartialExitByPercent(cleanTot, safePct).exitPallets));
   };
 
-  // Sync Percentage and Pallets (whole numbers only)
+  // Sync Percentage and Pallets (exact floor-rounded whole numbers)
   const handleTotalPalletsChange = (val: string) => {
     setTotalPallets(val);
-    const tot = Math.max(0, Math.floor(parseFloat(val) || 0));
-    const pct = parseFloat(exitPercent) || 90;
-    const calculatedExit = computeIntPartialPallets(tot, pct);
-    setExitPallets(String(calculatedExit));
-    setPallets(String(calculatedExit));
+    const tot = Math.max(0, Math.floor(parseFloat(en(val)) || 0));
+    const pct = Math.min(100, Math.max(0, parseFloat(en(exitPercent)) || 0));
+    const calc = calculatePartialExitByPercent(tot, pct);
+    setExitPallets(String(calc.exitPallets));
+    setPallets(String(calc.exitPallets));
   };
 
   const handleExitPercentChange = (val: string) => {
     setExitPercent(val);
-    const pct = Math.min(100, Math.max(0, parseFloat(val) || 0));
-    const tot = Math.max(0, Math.floor(parseFloat(totalPallets) || 0));
-    const calculatedExit = computeIntPartialPallets(tot, pct);
-    setExitPallets(String(calculatedExit));
-    setPallets(String(calculatedExit));
+    const pct = Math.min(100, Math.max(0, parseFloat(en(val)) || 0));
+    const tot = Math.max(0, Math.floor(parseFloat(en(totalPallets)) || 0));
+    const calc = calculatePartialExitByPercent(tot, pct);
+    setExitPallets(String(calc.exitPallets));
+    setPallets(String(calc.exitPallets));
   };
 
   const handleExitPalletsChange = (val: string) => {
-    setExitPallets(val);
-    setPallets(val);
-    const exP = Math.max(0, Math.floor(parseFloat(val) || 0));
-    const tot = Math.max(0, Math.floor(parseFloat(totalPallets) || 0));
+    const tot = Math.max(0, Math.floor(parseFloat(en(totalPallets)) || 0));
+    if (val === '') {
+      setExitPallets('');
+      setPallets('');
+      setExitPercent('0');
+      return;
+    }
+    const rawExP = Math.max(0, Math.floor(parseFloat(en(val)) || 0));
+    const clampedExP = tot > 0 ? Math.min(tot, rawExP) : rawExP;
+    setExitPallets(String(clampedExP));
+    setPallets(String(clampedExP));
     if (tot > 0) {
-      const calculatedPct = Math.min(100, Math.floor((exP / tot) * 100));
+      const calculatedPct = Math.min(100, Math.max(0, Math.round((clampedExP / tot) * 1000) / 10));
       setExitPercent(String(calculatedPct));
     }
   };
 
   const handleApplyPreset = (pct: number) => {
-    setExitPercent(String(pct));
-    const tot = Math.max(0, Math.floor(parseFloat(totalPallets) || 0));
-    const calculatedExit = computeIntPartialPallets(tot, pct);
-    setExitPallets(String(calculatedExit));
-    setPallets(String(calculatedExit));
+    const tot = Math.max(0, Math.floor(parseFloat(en(totalPallets)) || 0));
+    const calc = calculatePartialExitByPercent(tot, pct);
+    setExitPercent(String(calc.exitPercent));
+    setExitPallets(String(calc.exitPallets));
+    setPallets(String(calc.exitPallets));
   };
 
-  // Toggle Partial Exit
+  // Toggle Partial Exit (OFF = 100% complete exit, ON = floored percentage partial exit)
   const handleTogglePartialExit = () => {
     const nextState = !isPartialExit;
     setIsPartialExit(nextState);
     if (nextState) {
-      const tot = Math.max(0, Math.floor(parseFloat(totalPallets) || parseFloat(pallets) || 100));
+      const currentFull = Math.max(0, Math.floor(parseFloat(en(pallets)) || 0));
+      const fallbackTot = Math.max(0, Math.floor(parseFloat(en(totalPallets)) || 0));
+      const tot = currentFull > 0 ? currentFull : fallbackTot;
+      const parsedPct = parseFloat(en(exitPercent));
+      const pct = parsedPct > 0 && parsedPct < 100 ? parsedPct : 90;
+      const calc = calculatePartialExitByPercent(tot, pct);
       setTotalPallets(String(tot));
-      const pct = parseFloat(exitPercent) || 90;
-      const calculatedExit = computeIntPartialPallets(tot, pct);
-      setExitPallets(String(calculatedExit));
-      setPallets(String(calculatedExit));
+      setExitPercent(String(calc.exitPercent));
+      setExitPallets(String(calc.exitPallets));
+      setPallets(String(calc.exitPallets));
+    } else {
+      // Restore pallets back to 100% (totalPallets)
+      const tot = Math.max(0, Math.floor(parseFloat(en(totalPallets)) || 0));
+      setPallets(String(tot));
+      setErrors((prev) => {
+        if (!prev.partialExit) return prev;
+        const next = { ...prev };
+        delete next.partialExit;
+        return next;
+      });
     }
   };
 
   // Calculated values for comparison preview
-  const numTotalPallets = parseInt(en(totalPallets), 10) || 0;
-  const numExitPallets = parseInt(en(exitPallets), 10) || 0;
-  const numExitPercent = parseFloat(en(exitPercent)) || 0;
-  const numRemPercent = Math.max(0, 100 - numExitPercent);
+  const numTotalPallets = Math.max(0, parseInt(en(totalPallets), 10) || 0);
+  const numExitPallets = Math.min(numTotalPallets, Math.max(0, parseInt(en(exitPallets), 10) || 0));
+  const numExitPercent = Math.min(100, Math.max(0, Math.round((parseFloat(en(exitPercent)) || 0) * 10) / 10));
+  const numRemPercent = Math.max(0, Math.round((100 - numExitPercent) * 10) / 10);
   const numRemPallets = Math.max(0, numTotalPallets - numExitPallets);
 
   const validate = () => {
@@ -257,7 +326,7 @@ export const ExitForm: React.FC<ExitFormProps> = ({
     const fileVal = en(file.trim());
 
     if (!/^\d{7}$/.test(cot)) {
-      errs.cottage = 'شماره کوتاژ باید ۷ رقم باشد';
+      errs.cottage = 'شماره کوتاژ خروج باید ۷ رقم باشد';
     } else if (existingExits.some((x) => x.cottage === cot && x.id !== editingDoc?.id)) {
       errs.cottage = 'این کوتاژ خروج قبلاً ثبت شده است';
     }
@@ -275,11 +344,21 @@ export const ExitForm: React.FC<ExitFormProps> = ({
     if (!importer) errs.importer = 'شرکت واردکننده را انتخاب کنید';
     if (!carrier) errs.carrier = 'شرکت حمل‌ونقل را انتخاب کنید';
     if (!goods) errs.goods = 'نوع کالا را انتخاب کنید';
-    if (!batchId && !entryDocId) errs.batchId = 'تجمیع نهایی‌شده یا کوتاژ ورودی مرتبط را انتخاب کنید';
+    if (!batchId && !entryDocId) errs.batchId = 'تجمیع یا پرونده مرجع را انتخاب کنید';
 
     const trNum = parseInt(en(trailers), 10);
     if (isNaN(trNum) || trNum < 1) {
       errs.trailers = 'تعداد تریلی حداقل ۱ باشد';
+    }
+
+    if (isPartialExit) {
+      if (numTotalPallets < 1) {
+        errs.partialExit = 'مجموع کل پالت‌ها برای خروج درصدی باید حداقل ۱ باشد';
+      } else if (numExitPercent <= 0 || numExitPercent >= 100) {
+        errs.partialExit = 'درصد خروج در حالت پارت‌بندی باید بین ۱ تا ۹۹ درصد باشد (برای خروج کامل ۱۰۰٪ گزینه درصدی را خاموش کنید)';
+      } else if (numExitPallets < 0 || numExitPallets > numTotalPallets) {
+        errs.partialExit = 'تعداد پالت خروجی نمی‌تواند بیشتر از مجموع کل پالت‌ها باشد';
+      }
     }
 
     setErrors(errs);
@@ -333,9 +412,9 @@ export const ExitForm: React.FC<ExitFormProps> = ({
     setBatchId('');
     setEntryDocId('');
     setIsPartialExit(false);
-    setTotalPallets('100');
+    setTotalPallets('40');
     setExitPercent('90');
-    setExitPallets('90');
+    setExitPallets('36');
     setErrors({});
   };
 
@@ -347,52 +426,63 @@ export const ExitForm: React.FC<ExitFormProps> = ({
         </div>
         <div>
           <h3 className="font-lalezar text-xl text-slate-100 font-normal tracking-wide">
-            {editingDoc ? 'ویرایش سند خروج کالا' : 'ثبت سند خروج کالا'}
+            {editingDoc ? 'ویرایش کوتاژ خروجی' : 'ثبت کوتاژ خروجی جدید'}
           </h3>
-          <p className="text-[11px] text-slate-400">
-            اتصال به تجمیع نهایی‌شده، پارت‌بندی درصدی و ثبت مسیر خروج
-          </p>
         </div>
       </div>
 
       <form onSubmit={handleSubmit} className="space-y-4">
-        {/* Direct Entry Cottage Linking (for 90/10 Tracking) */}
+        {/* Unified Reference Picker: Consolidated Batch OR non-consolidated standalone File */}
         <div className="space-y-1.5">
           <label className="block text-xs font-medium text-slate-300">
-            اتصال مستقیم به کوتاژ ورودی (جهت ردیابی ۹۰/۱۰ و خروج فیزیکی)
+            انتخاب تجمیع یا پرونده مرجع <span className="text-amber-400">*</span>
           </label>
           <select
-            value={entryDocId}
-            onChange={(e) => handleEntryDocSelect(e.target.value)}
-            className="w-full glass-input rounded-xl px-3 py-2.5 text-xs outline-none"
-          >
-            <option value="" className="bg-[#0c0e14] text-slate-300">— انتخاب مستقیم کوتاژ ورودی (اختیاری در صورت انتخاب تجمیع) —</option>
-            {allDocs.map((d) => (
-              <option key={d.id} value={d.id} className="bg-[#0c0e14] text-slate-200">
-                کوتاژ {fa(d.cottage)} — پرونده {fa(d.file)} ({d.goods} / {fa(d.pallets || 0)} پالت)
-              </option>
-            ))}
-          </select>
-        </div>
-
-        {/* Batch Selection */}
-        <div className="space-y-1.5">
-          <label className="block text-xs font-medium text-slate-300">
-            تجمیع مربوطه {entryDocId ? <span className="text-slate-400 text-[10px]">(اختیاری)</span> : <span className="text-amber-400">*</span>}
-          </label>
-          <select
-            value={batchId}
-            onChange={(e) => handleBatchSelect(e.target.value)}
+            value={sourceSelectValue}
+            onChange={(e) => handleSourceSelect(e.target.value)}
             className={`w-full glass-input rounded-xl px-3 py-2.5 text-xs outline-none ${
               errors.batchId ? 'border-rose-500' : ''
             }`}
           >
-            <option value="" className="bg-[#0c0e14] text-slate-300">— انتخاب تجمیع نهایی‌شده —</option>
-            {finalizedBatches.map((b) => (
-              <option key={b.id} value={b.id} className="bg-[#0c0e14] text-slate-200">
-                تجمیع {b.id} — {b.goods} (پرونده {b.file})
-              </option>
-            ))}
+            <option value="" className="bg-[#0c0e14] text-slate-300">
+              — انتخاب تجمیع یا پرونده مرجع —
+            </option>
+
+            {finalizedBatches.length > 0 && (
+              <optgroup label="تجمیع‌های نهایی‌شده (بر اساس شماره پرونده)" className="bg-[#0c0e14] text-cyan-300">
+                {finalizedBatches.map((b) => {
+                  const { memberDocs, sumPallets } = getBatchMetrics(b);
+                  return (
+                    <option key={`batch:${b.id}`} value={`batch:${b.id}`} className="bg-[#0c0e14] text-slate-100">
+                      تجمیع {b.id} — پرونده {fa(b.file)} ({fa(memberDocs.length)} کوتاژ · {fa(sumPallets)} پالت)
+                    </option>
+                  );
+                })}
+              </optgroup>
+            )}
+
+            {pendingBatches.length > 0 && (
+              <optgroup label="تجمیع‌های ثبت‌شده (در انتظار نهایی)" className="bg-[#0c0e14] text-amber-300">
+                {pendingBatches.map((b) => {
+                  const { memberDocs, sumPallets } = getBatchMetrics(b);
+                  return (
+                    <option key={`batch:${b.id}`} value={`batch:${b.id}`} className="bg-[#0c0e14] text-slate-200">
+                      تجمیع {b.id} — پرونده {fa(b.file)} ({fa(memberDocs.length)} کوتاژ · {fa(sumPallets)} پالت)
+                    </option>
+                  );
+                })}
+              </optgroup>
+            )}
+
+            {standaloneDocs.length > 0 && (
+              <optgroup label="پرونده‌های تکی (تجمیع‌نشده)" className="bg-[#0c0e14] text-emerald-300">
+                {standaloneDocs.map((d) => (
+                  <option key={`doc:${d.id}`} value={`doc:${d.id}`} className="bg-[#0c0e14] text-slate-200">
+                    پرونده {fa(d.file)} — کوتاژ {fa(d.cottage)} ({d.goods} · {fa(d.pallets || 0)} پالت)
+                  </option>
+                ))}
+              </optgroup>
+            )}
           </select>
           {errors.batchId && <p className="text-[10px] text-rose-400">{errors.batchId}</p>}
         </div>
@@ -528,12 +618,12 @@ export const ExitForm: React.FC<ExitFormProps> = ({
 
           {!isPartialExit && (
             <div className="space-y-1">
-              <label className="block text-xs font-medium text-slate-300">تعداد پالت</label>
+              <label className="block text-xs font-medium text-slate-300">تعداد پالت (۱۰۰٪ خروج کامل)</label>
               <input
                 type="number"
                 min={0}
                 value={pallets}
-                onChange={(e) => setPallets(e.target.value)}
+                onChange={(e) => handleFullPalletsChange(e.target.value)}
                 placeholder="مثلاً 40"
                 className="w-full glass-input rounded-xl px-3 py-2.5 text-sm outline-none"
               />
@@ -592,17 +682,23 @@ export const ExitForm: React.FC<ExitFormProps> = ({
               <div>
                 <label
                   onClick={handleTogglePartialExit}
-                  className="text-xs font-bold text-white cursor-pointer flex items-center gap-1.5 select-none"
+                  className="text-xs font-bold text-white cursor-pointer flex items-center gap-1.5 flex-wrap select-none"
                 >
                   <span>خروج به صورت درصدی (پارت‌بندی بار)</span>
-                  {isPartialExit && (
+                  {isPartialExit ? (
                     <span className="text-[10px] bg-amber-500/20 text-amber-300 border border-amber-400/40 px-1.5 py-0.2 rounded font-bold">
                       فعال
+                    </span>
+                  ) : (
+                    <span className="text-[10px] bg-emerald-500/15 text-emerald-300 border border-emerald-400/35 px-1.5 py-0.2 rounded font-bold">
+                      خروج کامل ۱۰۰٪
                     </span>
                   )}
                 </label>
                 <p className="text-[11px] text-slate-400 leading-tight mt-0.5">
-                  برای بارهای تجمیع که بخشی از آن (مثلاً ۹۰٪) ترخیص و مابقی (۱۰٪) در انبار می‌ماند
+                  {isPartialExit
+                    ? 'محاسبه دقیق عدد صحیح با گرد کردن به پایین (مثلاً ۹۰٪ از ۱۰۱ پالت = ۹۰ پالت خروجی)'
+                    : 'حالت پیش‌فرض خروج کامل ۱۰۰٪ است؛ در صورت خروج درصدی (مثلاً ۹۰٪) این گزینه را فعال کنید'}
                 </p>
               </div>
             </div>
@@ -754,6 +850,10 @@ export const ExitForm: React.FC<ExitFormProps> = ({
                   </div>
                 </div>
               </div>
+
+              {errors.partialExit && (
+                <p className="text-[11px] text-rose-400 font-semibold">{errors.partialExit}</p>
+              )}
             </div>
           )}
         </div>
@@ -765,7 +865,7 @@ export const ExitForm: React.FC<ExitFormProps> = ({
             className="w-full py-3 px-4 rounded-xl ios-glass-btn-cyan flex items-center justify-center gap-2 cursor-pointer active:scale-98"
           >
             <Save className="w-4 h-4" />
-            <span>{editingDoc ? 'بروزرسانی سند خروج' : 'ثبت سند خروج'}</span>
+            <span>{editingDoc ? 'بروزرسانی کوتاژ خروجی' : 'ثبت کوتاژ خروجی'}</span>
           </button>
 
           {editingDoc && (

@@ -3,6 +3,7 @@ import { Layers, Printer, Lock, CheckCircle2, Trash2, HelpCircle, AlertCircle } 
 import { EntryDoc, Batch } from '../types';
 import { fa, fmtJ, en, esc, todayJ } from '../utils/jalali';
 import { printBatchReceipts } from '../utils/print';
+import { groupEntryDocsByFile, normalizeFileNumber } from '../utils/clearance9010';
 
 interface ConsolidationSectionProps {
   docs: EntryDoc[];
@@ -39,8 +40,9 @@ export const ConsolidationSection: React.FC<ConsolidationSectionProps> = ({
   // Keep only selected IDs that are still eligible
   const activeSelected = eligibleDocs.filter((d) => selectedDocIds.has(d.id));
 
-  // Determine anchor group (File + Goods) from first selected document
+  // Determine anchor file number from first selected document (consolidate strictly by File Number)
   const anchorDoc = activeSelected.length > 0 ? activeSelected[0] : null;
+  const anchorFile = anchorDoc ? normalizeFileNumber(anchorDoc.file) : null;
 
   const toggleSelect = (id: string) => {
     const next = new Set(selectedDocIds);
@@ -76,24 +78,24 @@ export const ConsolidationSection: React.FC<ConsolidationSectionProps> = ({
       return;
     }
 
+    const distinctGoods = Array.from(
+      new Set(activeSelected.map((d) => (d.goods || '').trim()).filter(Boolean))
+    );
+    const combinedGoods = distinctGoods.join(' / ') || anchorDoc?.goods || '';
+
     onCreateBatch(
       num,
       activeSelected.map((d) => d.id),
-      anchorDoc?.goods || '',
-      anchorDoc?.file || ''
+      combinedGoods,
+      normalizeFileNumber(anchorDoc?.file)
     );
 
     setSelectedDocIds(new Set());
     setBatchNumInput('');
   };
 
-  // Group eligible documents by File # and Goods
-  const groupedEligible: Record<string, EntryDoc[]> = {};
-  eligibleDocs.forEach((d) => {
-    const key = `${d.file || '—'}|${d.goods || '—'}`;
-    if (!groupedEligible[key]) groupedEligible[key] = [];
-    groupedEligible[key].push(d);
-  });
+  // Group eligible documents strictly by File Number (شماره پرونده)
+  const groupedEligible = groupEntryDocsByFile<EntryDoc>(eligibleDocs);
 
   const totalSelectedPallets = activeSelected.reduce((a, d) => a + d.pallets, 0);
 
@@ -102,11 +104,8 @@ export const ConsolidationSection: React.FC<ConsolidationSectionProps> = ({
       {/* Header */}
       <div>
         <h2 className="font-lalezar text-2xl font-normal text-slate-100 tracking-wide">
-          تجمیع کوتاژ
+          تجمیع
         </h2>
-        <p className="text-xs text-slate-400 mt-1">
-          فقط اسناد هم‌پرونده و هم‌نوع‌کالا · قالب شناسه تجمیع: SEETEC + ۵ رقم + COMB + ۴ رقم
-        </p>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
@@ -120,9 +119,6 @@ export const ConsolidationSection: React.FC<ConsolidationSectionProps> = ({
               <h3 className="font-lalezar text-lg text-slate-100">
                 اسناد آماده تجمیع ({fa(eligibleDocs.length)})
               </h3>
-              <p className="text-[11px] text-slate-400">
-                تخلیه کامل + قبض انبار + هر سه مدرک
-              </p>
             </div>
           </div>
 
@@ -138,9 +134,11 @@ export const ConsolidationSection: React.FC<ConsolidationSectionProps> = ({
               Object.keys(groupedEligible).map((key) => {
                 const groupDocs = groupedEligible[key];
                 const sample = groupDocs[0];
-                const isLocked =
-                  anchorDoc !== null &&
-                  !(sample.goods === anchorDoc.goods && sample.file === anchorDoc.file);
+                const groupFile = normalizeFileNumber(sample.file);
+                const isLocked = anchorFile !== null && groupFile !== anchorFile;
+                const groupGoodsLabel = Array.from(
+                  new Set(groupDocs.map((d) => (d.goods || '').trim()).filter(Boolean))
+                ).join(' / ');
 
                 return (
                   <div
@@ -149,12 +147,12 @@ export const ConsolidationSection: React.FC<ConsolidationSectionProps> = ({
                       isLocked ? 'opacity-40 border-dashed' : ''
                     }`}
                   >
-                    <div className="flex items-center justify-between text-xs mb-2">
-                      <span className="font-lalezar text-cyan-300">
+                    <div className="flex items-center justify-between gap-2 text-xs mb-2">
+                      <span className="font-lalezar text-cyan-300 shrink-0">
                         پرونده {fa(sample.file)}
                       </span>
-                      <span className="text-emerald-400 font-bold">{sample.goods}</span>
-                      <span className="text-slate-400">{fa(groupDocs.length)} سند</span>
+                      <span className="text-emerald-400 font-bold truncate">{groupGoodsLabel}</span>
+                      <span className="text-slate-400 shrink-0">{fa(groupDocs.length)} سند</span>
                     </div>
 
                     <div className="space-y-1.5">
@@ -204,20 +202,17 @@ export const ConsolidationSection: React.FC<ConsolidationSectionProps> = ({
               </div>
             ) : (
               <>
-                <div className="text-xs text-slate-300 bg-cyan-400/5 border border-dashed border-cyan-400/30 rounded-xl p-3 backdrop-blur-md">
-                  {anchorDoc ? (
+                {anchorDoc && (
+                  <div className="text-xs text-slate-300 bg-cyan-400/5 border border-dashed border-cyan-400/30 rounded-xl p-3 backdrop-blur-md">
                     <div>
-                      پرونده <b className="text-slate-100">{fa(anchorDoc.file)}</b> · کالا{' '}
-                      <b className="text-cyan-300">{anchorDoc.goods}</b>
+                      پرونده <b className="text-slate-100">{fa(anchorDoc.file)}</b>
                       <br />
                       <span className="text-emerald-400 font-bold">
                         {fa(activeSelected.length)} سند انتخاب‌شده ({fa(totalSelectedPallets)} پالت)
                       </span>
                     </div>
-                  ) : (
-                    <span>فقط اسناد هم‌پرونده و هم‌نوع‌کالا با هم تجمیع می‌شوند</span>
-                  )}
-                </div>
+                  </div>
+                )}
 
                 <div className="space-y-1.5">
                   <input
@@ -275,9 +270,12 @@ export const ConsolidationSection: React.FC<ConsolidationSectionProps> = ({
                   >
                     {/* Header */}
                     <div className="flex items-center justify-between gap-3 flex-wrap">
-                      <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-2 flex-wrap">
                         <span className="font-lalezar text-xl text-cyan-300">
                           تجمیع {fa(b.id)}
+                        </span>
+                        <span className="bg-amber-500/15 border border-amber-400/40 px-2.5 py-0.5 rounded-lg text-xs font-mono font-bold text-amber-200">
+                          پرونده {fa(b.file)}
                         </span>
                         <span className="bg-white/5 border border-white/10 px-2.5 py-0.5 rounded-lg text-xs ltr font-mono text-cyan-400">
                           {b.id}
