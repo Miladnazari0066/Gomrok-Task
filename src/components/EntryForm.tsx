@@ -163,9 +163,6 @@ export const EntryForm: React.FC<EntryFormProps> = ({
           <h3 className="font-lalezar text-xl text-slate-100 font-normal tracking-wide">
             {editingDoc ? 'ویرایش سند ورود کالا' : 'ثبت سند ورود کالا'}
           </h3>
-          <p className="text-[11px] text-slate-400">
-            کوتاژ و بارنامه از طریق شماره پرونده متصل می‌شوند
-          </p>
         </div>
       </div>
 
@@ -327,7 +324,7 @@ export const EntryForm: React.FC<EntryFormProps> = ({
           </div>
 
           <div className="space-y-1">
-            <label className="block text-xs font-medium text-slate-300">تعداد کل پالت (عدد صحیح)</label>
+            <label className="block text-xs font-medium text-slate-300">تعداد کل پالت</label>
             <input
               type="number"
               min={0}

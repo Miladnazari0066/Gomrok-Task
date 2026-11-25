@@ -310,7 +310,7 @@ export const CompanySettingsModal: React.FC<CompanySettingsModalProps> = ({
 
   const commitSaveOperations = async () => {
     if (!enableImport && !enableExport) {
-      addToast('حداقل یکی از ماژول‌های واردات یا صادرات باید فعال باشد.', 'err');
+      addToast('حداقل یکی از ماژول‌های ورود یا خروج باید فعال باشد.', 'err');
       return;
     }
     setBusy(true);
@@ -328,7 +328,7 @@ export const CompanySettingsModal: React.FC<CompanySettingsModalProps> = ({
 
   const handleRequestSaveOperations = () => {
     if (!enableImport && !enableExport) {
-      addToast('حداقل یکی از ماژول‌های واردات یا صادرات باید فعال باشد.', 'err');
+      addToast('حداقل یکی از ماژول‌های ورود یا خروج باید فعال باشد.', 'err');
       return;
     }
     if (disablingModule) {
@@ -773,7 +773,7 @@ export const CompanySettingsModal: React.FC<CompanySettingsModalProps> = ({
                     </span>
                   </div>
                   <div>
-                    <h4 className="font-bold text-base text-white">عملیات واردات (ورود کالا و تجمیع)</h4>
+                    <h4 className="font-bold text-base text-white">عملیات ورود (ورود کالا و تجمیع)</h4>
                     <p className="text-xs text-slate-400 mt-1 leading-relaxed">
                       شامل ثبت کوتاژهای ورودی، مدیریت تخلیه تریلی‌ها، قبض انبار، چک‌لیست اسناد و تجمیع کوتاژهای انبار.
                     </p>
@@ -805,7 +805,7 @@ export const CompanySettingsModal: React.FC<CompanySettingsModalProps> = ({
                     </span>
                   </div>
                   <div>
-                    <h4 className="font-bold text-base text-white">عملیات صادرات (خروج کالا، آزمایشگاه و ۹۰/۱۰)</h4>
+                    <h4 className="font-bold text-base text-white">عملیات خروج (خروج کالا، آزمایشگاه و ۹۰/۱۰)</h4>
                     <p className="text-xs text-slate-400 mt-1 leading-relaxed">
                       شامل ثبت اسناد خروج، مسیر قرمز/زرد، سوابق آزمایشگاه، تایید ساتا، ترخیص ۹۰/۱۰ و ثبت خروج فیزیکی تریلی‌ها.
                     </p>
@@ -816,7 +816,7 @@ export const CompanySettingsModal: React.FC<CompanySettingsModalProps> = ({
               {!enableImport && !enableExport && (
                 <div className="p-3 rounded-xl bg-rose-500/15 border border-rose-500/40 text-rose-200 text-xs flex items-center gap-2">
                   <AlertTriangle className="w-4 h-4 shrink-0" />
-                  <span>حداقل یکی از دو بخش واردات یا صادرات باید فعال باشد.</span>
+                  <span>حداقل یکی از دو بخش ورود یا خروج باید فعال باشد.</span>
                 </div>
               )}
 
@@ -1412,7 +1412,7 @@ export const CompanySettingsModal: React.FC<CompanySettingsModalProps> = ({
                         value={roleNameInput}
                         onChange={(e) => setRoleNameInput(e.target.value)}
                         className="w-full glass-input rounded-xl px-3 py-2 text-xs text-white disabled:opacity-60"
-                        placeholder="مثلاً: کارشناس ترخیص صادرات"
+                        placeholder="مثلاً: کارشناس ترخیص خروج"
                       />
                     </div>
                     <div>
@@ -1512,7 +1512,7 @@ export const CompanySettingsModal: React.FC<CompanySettingsModalProps> = ({
                     },
                     {
                       id: 'operations' as SettingsTab,
-                      title: 'واردات و صادرات',
+                      title: 'ورود و خروج',
                       desc: 'فعال/غیرفعال‌سازی ماژول‌ها',
                       icon: SlidersHorizontal,
                       allowed: canManageProfile,

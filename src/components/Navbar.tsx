@@ -83,11 +83,11 @@ export const Navbar: React.FC<NavbarProps> = ({
   const displayTitle = company?.name || 'مدیریت کارهای گمرک';
   const opsSubtitle = company
     ? company.enableImport && company.enableExport
-      ? 'واردات و صادرات · کنترل ورود، تجمیع و خروج'
+      ? 'ورود و خروج کالا · کنترل ورود، تجمیع و خروج'
       : company.enableImport
-        ? 'عملیات واردات · ورود کالا و تجمیع انبار'
-        : 'عملیات صادرات · خروج کالا، آزمایشگاه و ۹۰/۱۰'
-    : 'Customs Task Management · کنترل ورود، تجمیع و خروج';
+        ? 'عملیات ورود · ورود کالا و تجمیع انبار'
+        : 'عملیات خروج · خروج کالا، آزمایشگاه و ۹۰/۱۰'
+    : 'کنترل ورود، تجمیع و خروج کالا';
 
   return (
     <header className="sticky top-0 z-30 pt-safe-header bg-[#060b17]/95 border-b border-white/10 shadow-[0_8px_24px_-10px_rgba(0,0,0,0.75)] font-vazir dir-rtl select-none print:hidden">
@@ -142,21 +142,16 @@ export const Navbar: React.FC<NavbarProps> = ({
             </div>
           )}
 
-          {/* Authenticated Member & Role Badge */}
+          {/* Authenticated Member Name Badge (name only, no role/title) */}
           <div className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-full border bg-cyan-500/15 border-cyan-400/40 text-cyan-200 shrink-0">
             {member?.isOwner ? (
               <Crown className="w-3.5 h-3.5 text-amber-400 shrink-0" />
             ) : (
               <UserCheck className="w-3.5 h-3.5 text-cyan-400 shrink-0" />
             )}
-            <b className="font-bold whitespace-nowrap max-w-[120px] truncate">
+            <b className="font-bold whitespace-nowrap max-w-[160px] truncate">
               {member?.fullName || 'کاربر'}
             </b>
-            {roleName && (
-              <span className="text-[10px] text-cyan-300/80 border-r border-cyan-400/30 pr-1.5 whitespace-nowrap">
-                {roleName}
-              </span>
-            )}
           </div>
 
           {/* Company Settings Button (Authorized Admins / Owner) */}

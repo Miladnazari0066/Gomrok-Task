@@ -17,13 +17,19 @@ import {
   FileSpreadsheet,
   CheckCircle2,
   AlertCircle,
+  AlertTriangle,
+  XCircle,
+  RotateCcw,
+  Activity,
 } from 'lucide-react';
 import {
   getSavedSupabaseCredentials,
+  hasCustomSupabaseOverride,
   saveSupabaseCredentialsDetailed,
   clearSupabaseCredentials,
   isSupabaseConfigured,
   testSupabaseConnectionLive,
+  SupabaseLiveTestResult,
 } from '../lib/supabase';
 import { fetchAllDataFromCloud, migrateLocalDataToCloud, AllAppData } from '../services/db';
 import { SUPABASE_SQL_SCHEMA } from '../utils/sqlSchema';
@@ -62,6 +68,8 @@ export const CloudDbSyncModal: React.FC<CloudDbSyncModalProps> = ({
   const [testing, setTesting] = useState<boolean>(false);
   const [copiedSql, setCopiedSql] = useState<boolean>(false);
   const [tableMissing, setTableMissing] = useState<boolean>(false);
+  const [liveTestResult, setLiveTestResult] = useState<SupabaseLiveTestResult | null>(null);
+  const [hasCustomOverride, setHasCustomOverride] = useState<boolean>(() => hasCustomSupabaseOverride());
   const [activeTab, setActiveTab] = useState<'connection' | 'backup' | 'sql'>('connection');
 
   if (!isOpen) return null;
@@ -126,8 +134,10 @@ export const CloudDbSyncModal: React.FC<CloudDbSyncModalProps> = ({
     const normalizedKey = saved.normalizedKey || keyInput.trim();
     setUrlInput(normalizedUrl);
     setKeyInput(normalizedKey);
+    setHasCustomOverride(hasCustomSupabaseOverride());
 
     const liveRes = await testSupabaseConnectionLive(normalizedUrl, normalizedKey);
+    setLiveTestResult(liveRes);
     if (!liveRes.connectionOk) {
       setTesting(false);
       notify(liveRes.steps.connection.message, 'err');
@@ -166,12 +176,39 @@ export const CloudDbSyncModal: React.FC<CloudDbSyncModalProps> = ({
     }
   };
 
-  const handleDisconnect = () => {
-    clearSupabaseCredentials();
-    setUrlInput('');
-    setKeyInput('');
+  const handleRunLiveDiagnostic = async () => {
+    setTesting(true);
     setTableMissing(false);
-    notify('اتصال ابری قطع گردید', 'ok');
+    try {
+      const liveRes = await testSupabaseConnectionLive(urlInput, keyInput);
+      setLiveTestResult(liveRes);
+      if (!liveRes.connectionOk) {
+        notify(liveRes.steps.connection.message, 'err');
+      } else if (!liveRes.schemaReady) {
+        setTableMissing(true);
+        notify('اتصال سالم است، اما اسکریپت SQL چندشرکتی (v5.1) نیاز به اجرا دارد.', 'err');
+      } else {
+        notify('تست زنده اتصال Supabase با موفقیت تایید شد.', 'ok');
+      }
+    } finally {
+      setTesting(false);
+    }
+  };
+
+  const handleResetToDefault = async () => {
+    clearSupabaseCredentials();
+    const fallback = getSavedSupabaseCredentials();
+    setUrlInput(fallback.url);
+    setKeyInput(fallback.key);
+    setHasCustomOverride(false);
+    setTableMissing(false);
+    setLiveTestResult(null);
+    notify(
+      fallback.url
+        ? 'اتصال به تنظیمات پیش‌فرض پروژه بازنشانی شد'
+        : 'اطلاعات اتصال ابری پاک‌سازی شد',
+      'ok'
+    );
   };
 
   const handleFetchLatest = async () => {
@@ -508,47 +545,100 @@ export const CloudDbSyncModal: React.FC<CloudDbSyncModalProps> = ({
 
                 <div className="flex flex-wrap gap-2 pt-2">
                   <button
+                    type="button"
                     onClick={handleSaveConnection}
                     disabled={testing}
-                    className="px-4 py-2.5 bg-gradient-to-r from-cyan-500 to-blue-600 text-white font-bold text-xs rounded-xl hover:from-cyan-400 hover:to-blue-500 transition-all shadow-md flex items-center gap-2 disabled:opacity-50"
+                    className="px-4 py-2.5 bg-gradient-to-r from-cyan-500 to-blue-600 text-white font-bold text-xs rounded-xl hover:from-cyan-400 hover:to-blue-500 transition-all shadow-md flex items-center gap-2 disabled:opacity-50 cursor-pointer"
                   >
                     {testing ? (
                       <RefreshCw className="w-4 h-4 animate-spin" />
                     ) : (
                       <CloudCheck className="w-4 h-4" />
                     )}
-                    <span>{isConfigured ? 'بروزرسانی اتصال ابری' : 'اتصال به Supabase'}</span>
+                    <span>{isConfigured ? 'ذخیره و بروزرسانی اتصال' : 'اتصال به Supabase'}</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={handleRunLiveDiagnostic}
+                    disabled={testing}
+                    className="px-4 py-2.5 bg-cyan-500/15 hover:bg-cyan-500/25 text-cyan-200 border border-cyan-400/35 font-bold text-xs rounded-xl transition-all flex items-center gap-2 disabled:opacity-50 cursor-pointer"
+                  >
+                    <Activity className="w-4 h-4" />
+                    <span>تست زنده اتصال</span>
                   </button>
 
                   {isConfigured && (
                     <>
                       <button
+                        type="button"
                         onClick={handleFetchLatest}
                         disabled={loading}
-                        className="px-4 py-2.5 bg-white/10 hover:bg-white/20 text-slate-200 font-bold text-xs rounded-xl transition-all border border-white/10 flex items-center gap-2 disabled:opacity-50"
+                        className="px-4 py-2.5 bg-white/10 hover:bg-white/20 text-slate-200 font-bold text-xs rounded-xl transition-all border border-white/10 flex items-center gap-2 disabled:opacity-50 cursor-pointer"
                       >
                         <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
                         <span>دریافت آخرین اطلاعات از ابر</span>
                       </button>
 
                       <button
+                        type="button"
                         onClick={handleManualPushCloud}
                         disabled={loading}
-                        className="px-4 py-2.5 bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/40 font-bold text-xs rounded-xl transition-all flex items-center gap-2 disabled:opacity-50"
+                        className="px-4 py-2.5 bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/40 font-bold text-xs rounded-xl transition-all flex items-center gap-2 disabled:opacity-50 cursor-pointer"
                       >
                         <UploadCloud className="w-4 h-4" />
                         <span>ذخیره دستی سریع به ابر</span>
                       </button>
 
-                      <button
-                        onClick={handleDisconnect}
-                        className="px-3 py-2.5 text-rose-400 hover:text-rose-300 hover:bg-rose-500/10 rounded-xl transition-colors text-xs mr-auto"
-                      >
-                        قطع اتصال ابری
-                      </button>
+                      {hasCustomOverride && (
+                        <button
+                          type="button"
+                          onClick={handleResetToDefault}
+                          className="px-3 py-2.5 text-slate-300 hover:text-white hover:bg-white/10 rounded-xl transition-colors text-xs mr-auto flex items-center gap-1.5 cursor-pointer"
+                        >
+                          <RotateCcw className="w-3.5 h-3.5" />
+                          <span>بازگشت به پیش‌فرض</span>
+                        </button>
+                      )}
                     </>
                   )}
                 </div>
+
+                {/* Live 3-Stage Diagnostic Result inside Cloud DB panel */}
+                {liveTestResult && (
+                  <div className="pt-3 border-t border-white/10 space-y-2">
+                    {[
+                      liveTestResult.steps.connection,
+                      liveTestResult.steps.authConfig,
+                      liveTestResult.steps.schema,
+                    ].map((step, idx) => (
+                      <div
+                        key={idx}
+                        className={`rounded-xl p-3 border text-xs flex items-start gap-2 ${
+                          step.status === 'ok'
+                            ? 'bg-emerald-500/10 border-emerald-400/30 text-emerald-100'
+                            : step.status === 'warn'
+                              ? 'bg-amber-500/10 border-amber-400/35 text-amber-100'
+                              : step.status === 'error'
+                                ? 'bg-rose-500/12 border-rose-500/40 text-rose-100'
+                                : 'bg-white/[0.02] border-white/10 text-slate-400'
+                        }`}
+                      >
+                        {step.status === 'ok' ? (
+                          <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
+                        ) : step.status === 'warn' ? (
+                          <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+                        ) : (
+                          <XCircle className="w-4 h-4 text-rose-400 shrink-0 mt-0.5" />
+                        )}
+                        <div className="min-w-0 space-y-0.5">
+                          <p className="font-bold">{step.title}</p>
+                          <p className="text-[11px] opacity-90 leading-relaxed">{step.message}</p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             </div>
           )}

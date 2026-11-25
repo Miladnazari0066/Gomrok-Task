@@ -666,7 +666,7 @@ export const CompanyOnboardingWizard: React.FC<CompanyOnboardingWizardProps> = (
               {[
                 {
                   id: 'import_only' as BusinessOperationMode,
-                  title: 'فقط واردات',
+                  title: 'فقط ورود کالا',
                   icon: PackageCheck,
                   accent: 'cyan',
                   summary: 'ورود کالا، تخلیه، اسناد و تجمیع انبار فعال می‌شود.',
@@ -674,7 +674,7 @@ export const CompanyOnboardingWizard: React.FC<CompanyOnboardingWizardProps> = (
                 },
                 {
                   id: 'export_only' as BusinessOperationMode,
-                  title: 'فقط صادرات / خروج',
+                  title: 'فقط خروج کالا',
                   icon: LogOut,
                   accent: 'blue',
                   summary: 'خروج کالا، آزمایشگاه، درب خروج و ترخیص ۹۰/۱۰ فعال می‌شود.',
@@ -682,7 +682,7 @@ export const CompanyOnboardingWizard: React.FC<CompanyOnboardingWizardProps> = (
                 },
                 {
                   id: 'both' as BusinessOperationMode,
-                  title: 'هر دو (واردات و صادرات)',
+                  title: 'هر دو (ورود و خروج کالا)',
                   icon: Layers,
                   accent: 'emerald',
                   summary: 'تمامی ماژول‌های ورود، تجمیع، خروج، آزمایشگاه و ۹۰/۱۰ فعال می‌شوند.',
@@ -1194,10 +1194,10 @@ export const CompanyOnboardingWizard: React.FC<CompanyOnboardingWizardProps> = (
                 </div>
                 <p className="text-sm font-bold text-emerald-300">
                   {operationMode === 'import_only'
-                    ? 'فقط واردات (ورود کالا و تجمیع)'
+                    ? 'فقط ورود کالا (ورود کالا و تجمیع)'
                     : operationMode === 'export_only'
-                      ? 'فقط صادرات (خروج کالا، آزمایشگاه و ۹۰/۱۰)'
-                      : 'هر دو عملیات واردات و صادرات فعال'}
+                      ? 'فقط خروج کالا (خروج کالا، آزمایشگاه و ۹۰/۱۰)'
+                      : 'هر دو عملیات ورود و خروج کالا فعال'}
                 </p>
               </div>
 

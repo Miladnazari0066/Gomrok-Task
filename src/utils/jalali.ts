@@ -51,32 +51,34 @@ const div = (a: number, b: number) => ~~(a / b);
 const mod = (a: number, b: number) => a - ~~(a / b) * b;
 
 function jalCal(jy: number) {
+  // Canonical Jalaali (Borkowski) astronomical break points
   const breaks = [
-    -61, 9, 38, 473, 521, 575, 629, 683, 737, 791, 845, 899, 953, 1007, 1061,
-    1115, 1169, 1223, 1277, 1331, 1385, 1439, 1493, 1547, 1601, 1655, 1709,
-    1763, 1817, 1871, 1925, 1979, 2033, 2087, 2141, 2195, 2249, 2303, 2357,
-    2411, 2465, 2519, 2573, 2627, 2681, 2735, 2789, 2843, 2897, 2951, 3005, 3059,
+    -61, 9, 38, 199, 426, 686, 756, 818, 1111, 1181, 1210, 1635, 2060, 2097,
+    2192, 2262, 2324, 2394, 2456, 3178,
   ];
   const bl = breaks.length;
   const gy = jy + 621;
   let leapJ = -14;
   let jp = breaks[0];
-  let jump = 1;
+  let jump = 0;
 
-  for (let i = 1; i < bl && jy >= breaks[i]; i += 1) {
+  for (let i = 1; i < bl; i += 1) {
     const jm = breaks[i];
     jump = jm - jp;
-    leapJ += div(jump, 33) * 8 + div(mod(jump, 33), 4);
+    if (jy < jm) break;
+    leapJ = leapJ + div(jump, 33) * 8 + div(mod(jump, 33), 4);
     jp = jm;
   }
-  const n = jy - jp;
-  leapJ += div(n, 33) * 8 + div(mod(n, 33) + 3, 4);
+
+  let n = jy - jp;
+  leapJ = leapJ + div(n, 33) * 8 + div(mod(n, 33) + 3, 4);
   if (mod(jump, 33) === 4 && jump - n === 4) leapJ += 1;
+
   const leapG = div(gy, 4) - div((div(gy, 100) + 1) * 3, 4) - 150;
   const march = 20 + leapJ - leapG;
-  let nn = n;
-  if (jump - n < 6) nn = n - jump + div(jump + 4, 33) * 33;
-  let leap = mod(mod(nn + 1, 33) - 1, 4);
+
+  if (jump - n < 6) n = n - jump + div(jump + 4, 33) * 33;
+  let leap = mod(mod(n + 1, 33) - 1, 4);
   if (leap === -1) leap = 4;
 
   return { leap, gy, march };

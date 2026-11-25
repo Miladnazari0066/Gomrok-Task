@@ -104,7 +104,7 @@ export interface PermissionGroupDefinition {
 export const PERMISSION_GROUPS: PermissionGroupDefinition[] = [
   {
     id: 'import',
-    title: 'عملیات واردات (ورود کالا)',
+    title: 'عملیات ورود کالا',
     moduleGate: 'import',
     items: [
       { key: 'canViewEntry', label: 'مشاهده کوتاژهای ورودی' },
@@ -123,7 +123,7 @@ export const PERMISSION_GROUPS: PermissionGroupDefinition[] = [
   },
   {
     id: 'export',
-    title: 'عملیات صادرات، خروج کالا، آزمایشگاه و ۹۰/۱۰',
+    title: 'عملیات خروج کالا، آزمایشگاه و ۹۰/۱۰',
     moduleGate: 'export',
     items: [
       { key: 'canViewExit', label: 'مشاهده بخش خروج کالا' },
@@ -195,7 +195,7 @@ export const BUILT_IN_ROLE_TEMPLATES: Record<BuiltInRoleKey, OnboardingRoleDraft
   },
   import_operator: {
     key: 'import_operator',
-    name: 'اپراتور واردات',
+    name: 'اپراتور ورود کالا',
     description: 'ثبت، ویرایش و پیگیری کوتاژهای ورودی، نامه‌ها و کارهای روزانه',
     isSystem: true,
     isOwnerRole: false,
@@ -214,7 +214,7 @@ export const BUILT_IN_ROLE_TEMPLATES: Record<BuiltInRoleKey, OnboardingRoleDraft
   },
   export_operator: {
     key: 'export_operator',
-    name: 'اپراتور صادرات و خروج',
+    name: 'اپراتور خروج کالا',
     description: 'مدیریت خروج کالا، آزمایشگاه، پیگیری مراحل درب خروج و ثبت خروج فیزیکی ۹۰/۱۰',
     isSystem: true,
     isOwnerRole: false,

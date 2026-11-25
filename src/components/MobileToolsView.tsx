@@ -128,10 +128,6 @@ export const MobileToolsView: React.FC<MobileToolsViewProps> = ({
                 </p>
               </div>
             </div>
-
-            <span className="px-2.5 py-1 rounded-lg bg-cyan-500/15 border border-cyan-400/30 text-xs font-bold text-cyan-200 shrink-0">
-              {roleName || (member?.isOwner ? 'مالک شرکت' : 'کاربر')}
-            </span>
           </div>
 
           {allMemberships.length > 1 && onSwitchCompany && company && (
@@ -260,7 +256,7 @@ export const MobileToolsView: React.FC<MobileToolsViewProps> = ({
                       تنظیمات شرکت و کاربران
                     </p>
                     <p className="text-xs text-slate-400 truncate mt-0.5">
-                      پروفایل، واردات/صادرات، مدیریت کاربران، نقش‌ها و راه‌اندازی
+                      پروفایل، ورود/خروج، مدیریت کاربران، نقش‌ها و راه‌اندازی
                     </p>
                   </div>
                 </div>

@@ -123,7 +123,7 @@ function translateSupabaseError(err: any, fallbackMessage: string): Error {
     return buildError('نام شرکت باید حداقل ۲ کاراکتر باشد.', { status: 400 });
   }
   if (upper.includes('AT_LEAST_ONE_OPERATION_REQUIRED')) {
-    return buildError('حداقل یکی از عملیات واردات یا صادرات باید فعال باشد.', { status: 400 });
+    return buildError('حداقل یکی از عملیات ورود یا خروج باید فعال باشد.', { status: 400 });
   }
   if (upper.includes('INVALID_LOGO_URL') || upper.includes('LOGO_TOO_LARGE')) {
     return buildError('تصویر لوگو معتبر نیست یا حجم آن بیش از حد مجاز است.', { status: 400 });
