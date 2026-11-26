@@ -42,6 +42,12 @@ interface SecurityCenterModalProps {
   onPasswordsUpdated?: () => void;
   onOpenPermissionsModal?: () => void;
   canManagePermissions?: boolean;
+  canDelete?: boolean;
+  onRequestProtectedDelete?: (
+    title: string,
+    text: string,
+    onConfirmed: () => void | Promise<void>
+  ) => void;
   addToast: (text: string, type?: 'ok' | 'err' | 'info') => void;
 }
 
@@ -51,6 +57,8 @@ export const SecurityCenterModal: React.FC<SecurityCenterModalProps> = ({
   onPasswordsUpdated,
   onOpenPermissionsModal,
   canManagePermissions = false,
+  canDelete = false,
+  onRequestProtectedDelete,
   addToast,
 }) => {
   const [activeTab, setActiveTab] = useState<'overview' | 'passwords' | 'logs'>('overview');
@@ -186,6 +194,7 @@ export const SecurityCenterModal: React.FC<SecurityCenterModalProps> = ({
   };
 
   const handleClearLogs = () => {
+    if (!canDelete) return;
     clearSecurityAuditLogs();
     setLogs(getSecurityAuditLogs());
     setConfirmClearLogs(false);
@@ -609,18 +618,31 @@ export const SecurityCenterModal: React.FC<SecurityCenterModalProps> = ({
                     <span>خروجی لاگ (JSON)</span>
                   </button>
 
-                  <button
-                    onClick={() => setConfirmClearLogs(true)}
-                    className="flex items-center gap-1 text-[11px] px-2.5 py-1 rounded-lg bg-rose-500/15 hover:bg-rose-500/25 border border-rose-500/30 text-rose-300 cursor-pointer transition-all"
-                    title="پاکسازی لاگ‌ها"
-                  >
-                    <Trash2 className="w-3.5 h-3.5 text-rose-400" />
-                    <span>پاکسازی</span>
-                  </button>
+                  {canDelete && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (onRequestProtectedDelete) {
+                          onRequestProtectedDelete(
+                            'پاکسازی سوابق امنیتی',
+                            'آیا از پاکسازی تمامی سوابق امنیتی سیستم اطمینان دارید؟',
+                            handleClearLogs
+                          );
+                        } else {
+                          setConfirmClearLogs(true);
+                        }
+                      }}
+                      className="flex items-center gap-1 text-[11px] px-2.5 py-1 rounded-lg bg-rose-500/15 hover:bg-rose-500/25 border border-rose-500/30 text-rose-300 cursor-pointer transition-all"
+                      title="پاکسازی لاگ‌ها"
+                    >
+                      <Trash2 className="w-3.5 h-3.5 text-rose-400" />
+                      <span>پاکسازی</span>
+                    </button>
+                  )}
                 </div>
               </div>
 
-              {confirmClearLogs && (
+              {confirmClearLogs && canDelete && !onRequestProtectedDelete && (
                 <div className="p-3 rounded-xl bg-rose-500/20 border border-rose-500/40 text-xs flex items-center justify-between gap-2">
                   <span className="text-rose-200">
                     آیا از پاکسازی تمامی سوابق امنیتی سیستم اطمینان دارید؟

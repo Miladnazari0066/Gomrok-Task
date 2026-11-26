@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
-import { Layers, Printer, Lock, CheckCircle2, Trash2, HelpCircle, AlertCircle } from 'lucide-react';
-import { EntryDoc, Batch } from '../types';
+import { Layers, Printer, Lock, CheckCircle2, Trash2, HelpCircle, AlertCircle, X } from 'lucide-react';
+import { EntryDoc, Batch, ExitDoc } from '../types';
 import { fa, fmtJ, en, esc, todayJ } from '../utils/jalali';
 import { printBatchReceipts } from '../utils/print';
 import { groupEntryDocsByFile, normalizeFileNumber } from '../utils/clearance9010';
@@ -8,6 +8,8 @@ import { groupEntryDocsByFile, normalizeFileNumber } from '../utils/clearance901
 interface ConsolidationSectionProps {
   docs: EntryDoc[];
   batches: Batch[];
+  exits?: ExitDoc[];
+  companyName?: string;
   onCreateBatch: (batchId: string, docIds: string[], goods: string, file: string) => void;
   onFinalizeBatch: (batchId: string) => void;
   onDeleteBatch: (batchId: string) => void;
@@ -19,16 +21,60 @@ interface ConsolidationSectionProps {
 export const ConsolidationSection: React.FC<ConsolidationSectionProps> = ({
   docs,
   batches,
+  exits = [],
+  companyName = '',
   onCreateBatch,
   onFinalizeBatch,
   onDeleteBatch,
   getStageOf,
   canCreateBatch = true,
-  canDelete = true,
+  canDelete = false,
 }) => {
   const [selectedDocIds, setSelectedDocIds] = useState<Set<string>>(new Set());
   const [batchNumInput, setBatchNumInput] = useState('');
   const [errorMsg, setErrorMsg] = useState('');
+  const [printModalBatch, setPrintModalBatch] = useState<{ batch: Batch; memberDocs: EntryDoc[]; ownerCompany: string } | null>(null);
+  const [manualExitCottage, setManualExitCottage] = useState('');
+  const [manualCottageError, setManualCottageError] = useState('');
+
+  const resolveOwnerCompany = (memberDocs: EntryDoc[]) => {
+    const owners = Array.from(
+      new Set(memberDocs.map((d) => String(d.importer || '').trim()).filter(Boolean))
+    );
+    return owners.join(' / ') || companyName || '';
+  };
+
+  const handlePrintBatchClick = (b: Batch, memberDocs: EntryDoc[]) => {
+    const ownerCompany = resolveOwnerCompany(memberDocs);
+    const linkedExit = exits.find((x) => String(x.batchId || '') === String(b.id));
+    if (linkedExit?.cottage) {
+      printBatchReceipts(b, memberDocs, {
+        exitCottage: linkedExit.cottage,
+        ownerCompany,
+      });
+      return;
+    }
+    setManualExitCottage('');
+    setManualCottageError('');
+    setPrintModalBatch({ batch: b, memberDocs, ownerCompany });
+  };
+
+  const handleConfirmManualPrint = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!printModalBatch) return;
+    const cleanCot = en(manualExitCottage.trim());
+    if (!cleanCot) {
+      setManualCottageError('لطفاً شماره کوتاژ خروج را وارد کنید.');
+      return;
+    }
+    printBatchReceipts(printModalBatch.batch, printModalBatch.memberDocs, {
+      exitCottage: cleanCot,
+      ownerCompany: printModalBatch.ownerCompany,
+    });
+    setPrintModalBatch(null);
+    setManualExitCottage('');
+    setManualCottageError('');
+  };
 
   // Eligible documents = Stage 4 (Complete) and not yet in a batch
   const eligibleDocs = docs.filter((d) => {
@@ -295,9 +341,10 @@ export const ConsolidationSection: React.FC<ConsolidationSectionProps> = ({
                       </div>
 
                       <button
-                        onClick={() => printBatchReceipts(b, memberDocs)}
-                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-cyan-400/40 bg-cyan-400/10 text-cyan-300 hover:bg-cyan-400/20 text-xs transition-colors font-bold backdrop-blur-md"
-                        title="پرینت قبض‌های انبار این تجمیع"
+                        type="button"
+                        onClick={() => handlePrintBatchClick(b, memberDocs)}
+                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-cyan-400/40 bg-cyan-400/10 text-cyan-300 hover:bg-cyan-400/20 text-xs transition-colors font-bold backdrop-blur-md cursor-pointer"
+                        title="پرینت قبض‌های انبار تجمیع‌شده"
                       >
                         <Printer className="w-3.5 h-3.5" />
                         <span>پرینت قبض‌ها</span>
@@ -341,29 +388,33 @@ export const ConsolidationSection: React.FC<ConsolidationSectionProps> = ({
                     </div>
 
                     {/* Footer Summary & Actions */}
-                    <div className="flex items-center justify-between gap-3 pt-2 text-xs text-cyan-300">
+                    <div className="flex items-center justify-between gap-3 pt-2 text-xs text-cyan-300 flex-wrap">
                       <span>
                         {fa(memberDocs.length)} قبض انبار · {fa(totalPallets)} پالت مجموع
                       </span>
 
-                      {!b.finalized && (
-                        <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-2">
+                        {!b.finalized && (
                           <button
+                            type="button"
                             onClick={() => onFinalizeBatch(b.id)}
-                            className="px-3 py-1.5 rounded-lg bg-amber-400 text-slate-950 font-bold text-xs hover:bg-amber-300 transition-colors shadow-md"
+                            className="px-3 py-1.5 rounded-lg bg-amber-400 text-slate-950 font-bold text-xs hover:bg-amber-300 transition-colors shadow-md cursor-pointer"
                           >
                             نهایی کردن تجمیع
                           </button>
-                          {canDelete && (
-                            <button
-                              onClick={() => onDeleteBatch(b.id)}
-                              className="px-3 py-1.5 rounded-lg border border-rose-500/40 text-rose-400 hover:bg-rose-500/10 text-xs transition-colors backdrop-blur-md"
-                            >
-                              لغو تجمیع
-                            </button>
-                          )}
-                        </div>
-                      )}
+                        )}
+                        {canDelete && (
+                          <button
+                            type="button"
+                            onClick={() => onDeleteBatch(b.id)}
+                            className="flex items-center gap-1 px-3 py-1.5 rounded-lg border border-rose-500/40 bg-rose-500/10 text-rose-300 hover:bg-rose-500/20 text-xs font-bold transition-colors backdrop-blur-md cursor-pointer"
+                            title="حذف این تجمیع"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                            <span>حذف تجمیع</span>
+                          </button>
+                        )}
+                      </div>
                     </div>
                   </div>
                 );
@@ -371,6 +422,86 @@ export const ConsolidationSection: React.FC<ConsolidationSectionProps> = ({
           )}
         </div>
       </div>
+
+      {/* Mini Modal: Manual Exit Kootazh Entry before Printing Consolidated Receipts */}
+      {printModalBatch && (
+        <div
+          className="fixed inset-0 z-[80] flex items-center justify-center p-4 bg-black/75 backdrop-blur-xl"
+          onClick={() => setPrintModalBatch(null)}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="w-full max-w-md ios-glass-modal p-6 rounded-3xl border border-cyan-400/35 shadow-[0_30px_80px_rgba(0,0,0,0.9)] space-y-4"
+          >
+            <div className="flex items-center justify-between gap-3">
+              <div className="flex items-center gap-2.5">
+                <div className="p-2 rounded-xl bg-cyan-500/15 border border-cyan-400/35 text-cyan-300">
+                  <Printer className="w-5 h-5" />
+                </div>
+                <h3 className="font-lalezar text-xl text-slate-100 font-normal">
+                  ورود شماره کوتاژ خروج جهت چاپ
+                </h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setPrintModalBatch(null)}
+                className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-white/10 transition-colors cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <p className="text-xs text-slate-300 leading-relaxed">
+              برای این تجمیع (پرونده <b className="text-amber-300 font-mono">{fa(printModalBatch.batch.file)}</b>) هنوز سند خروجی ثبت نشده است. شماره کوتاژ خروج اختصاص‌یافته را وارد کنید تا در سربرگ «قبض‌های انبار تجمیع‌شده» چاپ شود.
+            </p>
+
+            <form onSubmit={handleConfirmManualPrint} className="space-y-4">
+              <div className="space-y-1.5">
+                <label className="block text-xs font-bold text-slate-200">
+                  شماره کوتاژ خروج
+                </label>
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  autoFocus
+                  value={manualExitCottage}
+                  onChange={(e) => {
+                    setManualExitCottage(e.target.value);
+                    if (manualCottageError) setManualCottageError('');
+                  }}
+                  placeholder="مثلاً 1402234"
+                  className={`w-full glass-input rounded-xl px-3.5 py-2.5 text-sm ltr text-center font-mono tracking-wider outline-none ${
+                    manualCottageError ? 'border-rose-500' : 'border-cyan-400/40'
+                  }`}
+                />
+                {manualCottageError && (
+                  <p className="text-xs text-rose-400 flex items-center gap-1">
+                    <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+                    <span>{manualCottageError}</span>
+                  </p>
+                )}
+              </div>
+
+              <div className="flex items-center gap-2.5 pt-1">
+                <button
+                  type="submit"
+                  className="flex-1 py-2.5 px-4 rounded-xl ios-glass-btn-cyan text-xs sm:text-sm font-bold flex items-center justify-center gap-2 cursor-pointer"
+                >
+                  <Printer className="w-4 h-4" />
+                  <span>چاپ قبض‌های انبار تجمیع‌شده</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setPrintModalBatch(null)}
+                  className="px-4 py-2.5 rounded-xl ios-glass-btn text-slate-300 hover:text-white text-xs sm:text-sm font-semibold cursor-pointer"
+                >
+                  انصراف
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

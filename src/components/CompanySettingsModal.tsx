@@ -64,6 +64,12 @@ interface CompanySettingsModalProps {
   workspace: WorkspaceContextData;
   onWorkspaceUpdated: () => Promise<void> | void;
   onLaunchRestartWizard: () => void;
+  canDelete?: boolean;
+  onRequestProtectedDelete?: (
+    title: string,
+    text: string,
+    onConfirmed: () => void | Promise<void>
+  ) => void;
   addToast: (msg: string, type?: 'ok' | 'err' | 'info') => void;
 }
 
@@ -110,6 +116,8 @@ export const CompanySettingsModal: React.FC<CompanySettingsModalProps> = ({
   workspace,
   onWorkspaceUpdated,
   onLaunchRestartWizard,
+  canDelete = false,
+  onRequestProtectedDelete,
   addToast,
 }) => {
   const { company, member, effectivePermissions } = workspace;
@@ -426,11 +434,11 @@ export const CompanySettingsModal: React.FC<CompanySettingsModalProps> = ({
     }
   };
 
-  const handleConfirmRemoveMember = async () => {
-    if (!confirmRemoveMember) return;
+  const executeRemoveMember = async (target: CompanyMember) => {
+    if (!canDelete) return;
     setBusy(true);
     try {
-      await removeCompanyUserApi(confirmRemoveMember.id);
+      await removeCompanyUserApi(target.id);
       setConfirmRemoveMember(null);
       await loadUsers();
       addToast('کاربر از فضای کاری شرکت حذف شد.', 'info');
@@ -439,6 +447,20 @@ export const CompanySettingsModal: React.FC<CompanySettingsModalProps> = ({
     } finally {
       setBusy(false);
     }
+  };
+
+  const handleConfirmRemoveMember = async () => {
+    if (!confirmRemoveMember || !canDelete) return;
+    const target = confirmRemoveMember;
+    if (onRequestProtectedDelete) {
+      onRequestProtectedDelete(
+        `حذف کاربر «${target.fullName}»`,
+        `آیا از حذف کاربر «${target.fullName}» از فضای کاری شرکت اطمینان دارید؟`,
+        () => executeRemoveMember(target)
+      );
+      return;
+    }
+    await executeRemoveMember(target);
   };
 
   // --- Handlers: Roles ---
@@ -498,11 +520,11 @@ export const CompanySettingsModal: React.FC<CompanySettingsModalProps> = ({
     }
   };
 
-  const handleDeleteRole = async () => {
-    if (!confirmDeleteRole) return;
+  const executeDeleteRole = async (target: CompanyRole) => {
+    if (!canDelete) return;
     setBusy(true);
     try {
-      await deleteCompanyRoleApi(confirmDeleteRole.id);
+      await deleteCompanyRoleApi(target.id);
       setConfirmDeleteRole(null);
       setSelectedRoleId('');
       await loadRoles();
@@ -512,6 +534,20 @@ export const CompanySettingsModal: React.FC<CompanySettingsModalProps> = ({
     } finally {
       setBusy(false);
     }
+  };
+
+  const handleDeleteRole = async () => {
+    if (!confirmDeleteRole || !canDelete) return;
+    const target = confirmDeleteRole;
+    if (onRequestProtectedDelete) {
+      onRequestProtectedDelete(
+        `حذف نقش «${target.name}»`,
+        `آیا از حذف نقش سفارشی «${target.name}» اطمینان دارید؟`,
+        () => executeDeleteRole(target)
+      );
+      return;
+    }
+    await executeDeleteRole(target);
   };
 
   const selectedRoleObj = roles.find((r) => r.id === selectedRoleId) || null;
@@ -629,10 +665,20 @@ export const CompanySettingsModal: React.FC<CompanySettingsModalProps> = ({
                       <Upload className="w-3.5 h-3.5" />
                       <span>{logoUrl ? 'تغییر لوگو' : 'بارگذاری لوگو'}</span>
                     </button>
-                    {logoUrl && (
+                    {logoUrl && canDelete && (
                       <button
                         type="button"
-                        onClick={() => setLogoUrl('')}
+                        onClick={() => {
+                          if (onRequestProtectedDelete) {
+                            onRequestProtectedDelete(
+                              'حذف لوگوی شرکت',
+                              'آیا از حذف لوگوی شرکت اطمینان دارید؟',
+                              () => setLogoUrl('')
+                            );
+                          } else {
+                            setLogoUrl('');
+                          }
+                        }}
                         className="px-3 py-2 rounded-xl bg-rose-500/15 hover:bg-rose-500/25 border border-rose-500/30 text-rose-300 text-xs font-bold flex items-center gap-1.5 cursor-pointer"
                       >
                         <Trash2 className="w-3.5 h-3.5" />
@@ -1272,15 +1318,27 @@ export const CompanySettingsModal: React.FC<CompanySettingsModalProps> = ({
                                   </>
                                 )}
                               </button>
-                              <button
-                                type="button"
-                                disabled={busy}
-                                onClick={() => setConfirmRemoveMember(m)}
-                                className="p-2 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/30 text-rose-300 cursor-pointer disabled:opacity-50"
-                                title="حذف کاربر از شرکت"
-                              >
-                                <Trash2 className="w-3.5 h-3.5" />
-                              </button>
+                              {canDelete && (
+                                <button
+                                  type="button"
+                                  disabled={busy}
+                                  onClick={() => {
+                                    if (onRequestProtectedDelete) {
+                                      onRequestProtectedDelete(
+                                        `حذف کاربر «${m.fullName}»`,
+                                        `آیا از حذف کاربر «${m.fullName}» از فضای کاری شرکت اطمینان دارید؟`,
+                                        () => executeRemoveMember(m)
+                                      );
+                                    } else {
+                                      setConfirmRemoveMember(m);
+                                    }
+                                  }}
+                                  className="p-2 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/30 text-rose-300 cursor-pointer disabled:opacity-50"
+                                  title="حذف کاربر از شرکت"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </button>
+                              )}
                             </>
                           )}
                         </div>
@@ -1359,10 +1417,20 @@ export const CompanySettingsModal: React.FC<CompanySettingsModalProps> = ({
                           : `ویرایش نقش: ${selectedRoleObj?.name || ''}`}
                       </span>
                     </h4>
-                    {roleFormMode === 'edit' && selectedRoleObj && !selectedRoleObj.isSystem && (
+                    {canDelete && roleFormMode === 'edit' && selectedRoleObj && !selectedRoleObj.isSystem && (
                       <button
                         type="button"
-                        onClick={() => setConfirmDeleteRole(selectedRoleObj)}
+                        onClick={() => {
+                          if (onRequestProtectedDelete) {
+                            onRequestProtectedDelete(
+                              `حذف نقش «${selectedRoleObj.name}»`,
+                              `آیا از حذف نقش سفارشی «${selectedRoleObj.name}» اطمینان دارید؟`,
+                              () => executeDeleteRole(selectedRoleObj)
+                            );
+                          } else {
+                            setConfirmDeleteRole(selectedRoleObj);
+                          }
+                        }}
                         className="px-3 py-1.5 rounded-xl bg-rose-500/15 hover:bg-rose-500/25 border border-rose-500/35 text-rose-300 text-xs font-bold flex items-center gap-1 cursor-pointer"
                       >
                         <Trash2 className="w-3.5 h-3.5" />

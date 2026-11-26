@@ -100,6 +100,10 @@ import {
   AllAppData,
 } from './services/db';
 import {
+  isMiladNazariAccount,
+  DELETE_FORBIDDEN_MESSAGE,
+} from './utils/deleteGuard';
+import {
   PackageCheck,
   LogOut,
   BarChart3,
@@ -341,6 +345,8 @@ export default function App() {
     isOpen: boolean;
     title: string;
     text: string;
+    okLabel?: string;
+    requireDeletePassword?: boolean;
     action: () => void;
   }>({ isOpen: false, title: '', text: '', action: () => {} });
 
@@ -578,6 +584,38 @@ export default function App() {
     ? `${workspace.member.fullName} (${workspace.role.name})`
     : 'کاربر';
 
+  // Exclusive deletion authorization: ONLY "Milad Nazari" account may delete anywhere in the system
+  const isMiladNazari = React.useMemo(
+    () => isMiladNazariAccount(workspace?.member),
+    [workspace?.member]
+  );
+  const canAuthorizedDelete = isMiladNazari;
+
+  const requestProtectedDelete = useCallback(
+    (title: string, text: string, onConfirmed: () => void | Promise<void>) => {
+      if (!isMiladNazari) {
+        addToast(DELETE_FORBIDDEN_MESSAGE, 'err');
+        return;
+      }
+      setConfirmModal({
+        isOpen: true,
+        title,
+        text,
+        okLabel: 'تأیید و حذف',
+        requireDeletePassword: true,
+        action: () => {
+          setConfirmModal((prev) => ({
+            ...prev,
+            isOpen: false,
+            requireDeletePassword: false,
+          }));
+          void onConfirmed();
+        },
+      });
+    },
+    [isMiladNazari, addToast]
+  );
+
   const canOpenCompanySettings = Boolean(
     workspace &&
       (workspace.member.isOwner ||
@@ -756,18 +794,12 @@ export default function App() {
   }, [isAuthenticated, currentUser, workspace?.role.name, userRole, companyId, resetInMemoryTenantData, addToast]);
 
   const handleClearAllData = () => {
-    if (userRole === 'viewer' || !activePermissions.canDeleteItems) {
-      addToast('شما دسترسی پاکسازی اطلاعات را ندارید.', 'err');
-      return;
-    }
-    setConfirmModal({
-      isOpen: true,
-      title: 'پاکسازی حافظه محلی شرکت',
-      text: 'آیا از پاکسازی حافظه محلی این دستگاه برای شرکت فعلی اطمینان دارید؟ داده‌های ذخیره شده در سرور ابری با همگام‌سازی بعدی مجدداً دریافت می‌شوند.',
-      action: () => {
+    requestProtectedDelete(
+      'پاکسازی حافظه محلی شرکت',
+      'آیا از پاکسازی حافظه محلی این دستگاه برای شرکت فعلی اطمینان دارید؟ داده‌های ذخیره شده در سرور ابری با همگام‌سازی بعدی مجدداً دریافت می‌شوند.',
+      () => {
         clearAllTestData(companyId);
         resetInMemoryTenantData();
-        setConfirmModal({ isOpen: false, title: '', text: '', action: () => {} });
         logSecurityEvent({
           type: 'data_cleared',
           user: currentUser || 'مدیر',
@@ -776,8 +808,8 @@ export default function App() {
           severity: 'warning',
         });
         addToast('حافظه محلی با موفقیت پاکسازی شد.', 'ok');
-      },
-    });
+      }
+    );
   };
 
   // Helper Stage Detector for Entry Docs
@@ -875,49 +907,77 @@ export default function App() {
     }
   };
 
-  // Option Deletions (tenant-scoped)
+  // Option Deletions (tenant-scoped + exclusively guarded via Milad Nazari & 1234)
   const handleDeleteImporter = (name: string) => {
-    const next = importers.filter((item) => item !== name);
-    setImporters(next);
-    saveAllData({ importers: next }, companyId);
-    if (isSupabaseConfigured() && companyId) {
-      saveLookupOptionsCloud({ importers: next }, companyId).catch((err) =>
-        console.warn('Supabase sync notice (importers):', err?.message || err)
-      );
-    }
+    requestProtectedDelete(
+      `حذف واردکننده «${name}»`,
+      `آیا از حذف «${name}» از فهرست شرکت‌های واردکننده اطمینان دارید؟`,
+      () => {
+        const next = importers.filter((item) => item !== name);
+        setImporters(next);
+        saveAllData({ importers: next }, companyId);
+        if (isSupabaseConfigured() && companyId) {
+          saveLookupOptionsCloud({ importers: next }, companyId).catch((err) =>
+            console.warn('Supabase sync notice (importers):', err?.message || err)
+          );
+        }
+        addToast(`«${name}» از فهرست واردکنندگان حذف شد`, 'info');
+      }
+    );
   };
 
   const handleDeleteCarrier = (name: string) => {
-    const next = carriers.filter((item) => item !== name);
-    setCarriers(next);
-    saveAllData({ carriers: next }, companyId);
-    if (isSupabaseConfigured() && companyId) {
-      saveLookupOptionsCloud({ carriers: next }, companyId).catch((err) =>
-        console.warn('Supabase sync notice (carriers):', err?.message || err)
-      );
-    }
+    requestProtectedDelete(
+      `حذف شرکت حمل «${name}»`,
+      `آیا از حذف «${name}» از فهرست شرکت‌های حمل‌ونقل اطمینان دارید؟`,
+      () => {
+        const next = carriers.filter((item) => item !== name);
+        setCarriers(next);
+        saveAllData({ carriers: next }, companyId);
+        if (isSupabaseConfigured() && companyId) {
+          saveLookupOptionsCloud({ carriers: next }, companyId).catch((err) =>
+            console.warn('Supabase sync notice (carriers):', err?.message || err)
+          );
+        }
+        addToast(`«${name}» از فهرست شرکت‌های حمل حذف شد`, 'info');
+      }
+    );
   };
 
   const handleDeleteGoods = (name: string) => {
-    const next = goodsList.filter((item) => item !== name);
-    setGoodsList(next);
-    saveAllData({ goodsList: next }, companyId);
-    if (isSupabaseConfigured() && companyId) {
-      saveLookupOptionsCloud({ goodsList: next }, companyId).catch((err) =>
-        console.warn('Supabase sync notice (goods):', err?.message || err)
-      );
-    }
+    requestProtectedDelete(
+      `حذف نوع کالا «${name}»`,
+      `آیا از حذف «${name}» از فهرست نوع کالاها اطمینان دارید؟`,
+      () => {
+        const next = goodsList.filter((item) => item !== name);
+        setGoodsList(next);
+        saveAllData({ goodsList: next }, companyId);
+        if (isSupabaseConfigured() && companyId) {
+          saveLookupOptionsCloud({ goodsList: next }, companyId).catch((err) =>
+            console.warn('Supabase sync notice (goods):', err?.message || err)
+          );
+        }
+        addToast(`«${name}» از فهرست کالاها حذف شد`, 'info');
+      }
+    );
   };
 
   const handleDeleteBrand = (name: string) => {
-    const next = brands.filter((item) => item !== name);
-    setBrands(next);
-    saveAllData({ brands: next }, companyId);
-    if (isSupabaseConfigured() && companyId) {
-      saveLookupOptionsCloud({ brands: next }, companyId).catch((err) =>
-        console.warn('Supabase sync notice (brands):', err?.message || err)
-      );
-    }
+    requestProtectedDelete(
+      `حذف برند «${name}»`,
+      `آیا از حذف «${name}» از فهرست برندها اطمینان دارید؟`,
+      () => {
+        const next = brands.filter((item) => item !== name);
+        setBrands(next);
+        saveAllData({ brands: next }, companyId);
+        if (isSupabaseConfigured() && companyId) {
+          saveLookupOptionsCloud({ brands: next }, companyId).catch((err) =>
+            console.warn('Supabase sync notice (brands):', err?.message || err)
+          );
+        }
+        addToast(`«${name}» از فهرست برندها حذف شد`, 'info');
+      }
+    );
   };
 
   // Entry Doc Actions (tenant-scoped + Import module gated)
@@ -1009,19 +1069,14 @@ export default function App() {
   };
 
   const handleDeleteDoc = (id: string) => {
-    if (!enableImport || userRole === 'viewer' || !activePermissions.canDeleteItems) {
-      addToast('شما دسترسی حذف اسناد را ندارید.', 'err');
-      return;
-    }
-
+    if (!enableImport) return;
     const target = docs.find((d) => d.id === id);
     if (!target) return;
 
-    setConfirmModal({
-      isOpen: true,
-      title: `حذف سند کوتاژ ${fa(target.cottage)}`,
-      text: 'آیا از حذف این سند ورود اطمینان دارید؟ این عملیات غیرقابل بازگشت است.',
-      action: () => {
+    requestProtectedDelete(
+      `حذف سند کوتاژ ${fa(target.cottage)}`,
+      'آیا از حذف این سند ورود اطمینان دارید؟ این عملیات غیرقابل بازگشت است.',
+      () => {
         const updatedBatches = batches
           .map((b) => ({
             ...b,
@@ -1048,10 +1103,9 @@ export default function App() {
           severity: 'warning',
         });
 
-        setConfirmModal((prev) => ({ ...prev, isOpen: false }));
         addToast('سند کوتاژ حذف شد', 'info');
-      },
-    });
+      }
+    );
   };
 
   const handleUpdateUnloaded = (id: string, delta: number) => {
@@ -1557,38 +1611,60 @@ export default function App() {
   };
 
   const handleDeleteBatch = (batchId: string) => {
-    if (!enableImport || userRole === 'viewer' || !activePermissions.canDeleteItems) {
-      addToast('شما دسترسی لغو تجمیع را ندارید.', 'err');
-      return;
-    }
+    if (!enableImport) return;
+    const targetBatch = batches.find((b) => String(b.id) === String(batchId));
+    const linkedExitsCount = exits.filter((x) => String(x.batchId || '') === String(batchId)).length;
 
-    setConfirmModal({
-      isOpen: true,
-      title: 'لغو تجمیع',
-      text: 'این تجمیع حذف می‌شود و اسناد آن دوباره به وضعیت «کامل» باز می‌گردند.',
-      action: () => {
-        const updated = batches.filter((b) => b.id !== batchId);
-        setBatches(updated);
-        saveAllData({ batches: updated }, companyId);
+    requestProtectedDelete(
+      `حذف تجمیع ${fa(batchId)}`,
+      targetBatch?.finalized
+        ? linkedExitsCount > 0
+          ? `این تجمیع نهایی‌شده حذف می‌شود، اسناد ورودی آن مجدداً به وضعیت «کامل» بازمی‌گردند و اتصال ${fa(linkedExitsCount)} سند خروج مرتبط بازنشانی خواهد شد.`
+          : 'این تجمیع نهایی‌شده حذف می‌شود و اسناد ورودی عضو آن مجدداً به وضعیت «کامل» بازمی‌گردند.'
+        : 'این تجمیع حذف می‌شود و اسناد آن دوباره به وضعیت «کامل» باز می‌گردند.',
+      () => {
+        const updatedBatches = batches.filter((b) => String(b.id) !== String(batchId));
+        setBatches(updatedBatches);
+
+        let updatedExits = exits;
+        const touchedExits: ExitDoc[] = [];
+        if (linkedExitsCount > 0) {
+          updatedExits = exits.map((x) => {
+            if (String(x.batchId || '') === String(batchId)) {
+              const cleaned: ExitDoc = { ...x, batchId: null };
+              touchedExits.push(cleaned);
+              return cleaned;
+            }
+            return x;
+          });
+          setExits(updatedExits);
+          saveAllData({ batches: updatedBatches, exits: updatedExits }, companyId);
+        } else {
+          saveAllData({ batches: updatedBatches }, companyId);
+        }
 
         if (isSupabaseConfigured() && companyId) {
           deleteBatchCloud(batchId, companyId).catch((err) =>
             console.warn('Supabase sync notice (delete batch):', err?.message || err)
           );
+          touchedExits.forEach((ex) => {
+            saveExitDocCloud(ex, companyId).catch((err) =>
+              console.warn('Supabase sync notice (unlink exit batch):', err?.message || err)
+            );
+          });
         }
 
         logSecurityEvent({
           type: 'doc_deleted',
           user: currentUser || 'مدیر',
           role: userRole,
-          description: `تجمیع با شناسه ${fa(batchId)} لغو و حذف شد`,
+          description: `تجمیع با شناسه ${fa(batchId)} حذف شد`,
           severity: 'warning',
         });
 
-        setConfirmModal((prev) => ({ ...prev, isOpen: false }));
-        addToast('تجمیع لغو شد', 'info');
-      },
-    });
+        addToast(`تجمیع ${fa(batchId)} با موفقیت حذف شد`, 'info');
+      }
+    );
   };
 
   // Exit Actions (tenant-scoped + Export module gated)
@@ -1675,16 +1751,13 @@ export default function App() {
   };
 
   const handleDeleteExit = (id: string) => {
-    if (!enableExport || userRole === 'viewer' || !activePermissions.canDeleteItems) {
-      addToast('شما دسترسی حذف اسناد خروج را ندارید.', 'err');
-      return;
-    }
+    if (!enableExport) return;
+    const targetExit = exits.find((x) => x.id === id);
 
-    setConfirmModal({
-      isOpen: true,
-      title: 'حذف سند خروج',
-      text: 'آیا از حذف این سند خروج اطمینان دارید؟',
-      action: () => {
+    requestProtectedDelete(
+      targetExit ? `حذف سند خروج کوتاژ ${fa(targetExit.cottage)}` : 'حذف سند خروج',
+      'آیا از حذف این سند خروج اطمینان دارید؟ این عملیات غیرقابل بازگشت است.',
+      () => {
         const updated = exits.filter((x) => x.id !== id);
         setExits(updated);
         saveAllData({ exits: updated }, companyId);
@@ -1699,14 +1772,13 @@ export default function App() {
           type: 'doc_deleted',
           user: currentUser || 'مدیر',
           role: userRole,
-          description: `سند خروج با شناسه ${id} حذف شد`,
+          description: `سند خروج با شناسه ${targetExit?.cottage || id} حذف شد`,
           severity: 'warning',
         });
 
-        setConfirmModal((prev) => ({ ...prev, isOpen: false }));
         addToast('سند خروج حذف شد', 'info');
-      },
-    });
+      }
+    );
   };
 
   const handleUpdateExitDoc = (updatedDoc: ExitDoc) => {
@@ -1891,25 +1963,35 @@ export default function App() {
   const handleDeletePhysicalExit = (id: string) => {
     if (!enableExport) return;
     const target = physicalExits.find((p) => p.id === id);
-    const updated = physicalExits.filter((p) => p.id !== id);
-    setPhysicalExits(updated);
-    saveAllData({ physicalExits: updated }, companyId);
+    requestProtectedDelete(
+      'حذف تراکنش خروج فیزیکی',
+      target
+        ? `آیا از حذف تراکنش خروج فیزیکی کوتاژ ${fa(target.cottage)} (${fa(target.pallets)} پالت · ${target.truckInfo}) اطمینان دارید؟`
+        : 'آیا از حذف این تراکنش خروج فیزیکی اطمینان دارید؟',
+      () => {
+        const updated = physicalExits.filter((p) => p.id !== id);
+        setPhysicalExits(updated);
+        saveAllData({ physicalExits: updated }, companyId);
 
-    if (isSupabaseConfigured() && companyId) {
-      deletePhysicalExitCloud(id, companyId).catch((err) =>
-        console.warn('Supabase sync notice (physical exit delete):', err?.message || err)
-      );
-    }
+        if (isSupabaseConfigured() && companyId) {
+          deletePhysicalExitCloud(id, companyId).catch((err) =>
+            console.warn('Supabase sync notice (physical exit delete):', err?.message || err)
+          );
+        }
 
-    if (target) {
-      logSecurityEvent({
-        type: 'doc_deleted',
-        user: activeOperatorLabel,
-        role: userRole,
-        description: `تراکنش خروج فیزیکی کوتاژ ${fa(target.cottage)} (${fa(target.pallets)} پالت) حذف شد`,
-        severity: 'warning',
-      });
-    }
+        if (target) {
+          logSecurityEvent({
+            type: 'doc_deleted',
+            user: activeOperatorLabel,
+            role: userRole,
+            description: `تراکنش خروج فیزیکی کوتاژ ${fa(target.cottage)} (${fa(target.pallets)} پالت) حذف شد`,
+            severity: 'warning',
+          });
+        }
+
+        addToast('تراکنش خروج فیزیکی حذف شد و موجودی پالت‌ها بروزرسانی گردید.', 'info');
+      }
+    );
   };
 
   const handleAddDailyTask = (task: DailyTask) => {
@@ -1936,15 +2018,24 @@ export default function App() {
   };
 
   const handleDeleteDailyTask = (id: string) => {
-    const updated = dailyTasks.filter((t) => t.id !== id);
-    setDailyTasks(updated);
-    saveAllData({ dailyTasks: updated }, companyId);
-    if (isSupabaseConfigured() && companyId) {
-      deleteDailyTaskCloud(id, companyId).catch((err) =>
-        console.warn('Supabase sync notice (delete task):', err?.message || err)
-      );
-    }
-    addToast('کار حذف شد', 'info');
+    const targetTask = dailyTasks.find((t) => t.id === id);
+    requestProtectedDelete(
+      'حذف کار روزانه',
+      targetTask
+        ? `آیا از حذف کار «${targetTask.title}» اطمینان دارید؟`
+        : 'آیا از حذف این کار اطمینان دارید؟',
+      () => {
+        const updated = dailyTasks.filter((t) => t.id !== id);
+        setDailyTasks(updated);
+        saveAllData({ dailyTasks: updated }, companyId);
+        if (isSupabaseConfigured() && companyId) {
+          deleteDailyTaskCloud(id, companyId).catch((err) =>
+            console.warn('Supabase sync notice (delete task):', err?.message || err)
+          );
+        }
+        addToast('کار حذف شد', 'info');
+      }
+    );
   };
 
   // Smart Auto Follow-up Task Generation (deduplicated by autoSourceKey)
@@ -2573,10 +2664,10 @@ export default function App() {
                         onAddCarrier={handleAddCarrier}
                         onAddGoods={handleAddGoods}
                         onAddBrand={handleAddBrand}
-                        onDeleteImporter={handleDeleteImporter}
-                        onDeleteCarrier={handleDeleteCarrier}
-                        onDeleteGoods={handleDeleteGoods}
-                        onDeleteBrand={handleDeleteBrand}
+                        onDeleteImporter={canAuthorizedDelete ? handleDeleteImporter : undefined}
+                        onDeleteCarrier={canAuthorizedDelete ? handleDeleteCarrier : undefined}
+                        onDeleteGoods={canAuthorizedDelete ? handleDeleteGoods : undefined}
+                        onDeleteBrand={canAuthorizedDelete ? handleDeleteBrand : undefined}
                         existingDocs={docs}
                       />
                     )}
@@ -2772,7 +2863,7 @@ export default function App() {
                               batch={batch}
                               isHighlighted={highlightedEntryId === doc.id}
                               canEdit={activePermissions.canEditEntry}
-                              canDelete={activePermissions.canDeleteItems}
+                              canDelete={canAuthorizedDelete}
                               onEdit={(d) => {
                                 if (!activePermissions.canEditEntry) {
                                   addToast('ویرایش کوتاژ ورودی برای دسترسی شما محدود است.', 'err');
@@ -2781,10 +2872,6 @@ export default function App() {
                                 handleStartEditDoc(d);
                               }}
                               onDelete={(id) => {
-                                if (!activePermissions.canDeleteItems) {
-                                  addToast('حذف اسناد برای دسترسی شما محدود است.', 'err');
-                                  return;
-                                }
                                 handleDeleteDoc(id);
                               }}
                               onUpdateUnloaded={(id, delta) => {
@@ -2835,12 +2922,14 @@ export default function App() {
               <ConsolidationSection
                 docs={docs}
                 batches={batches}
+                exits={exits}
+                companyName={company?.name || ''}
                 onCreateBatch={handleCreateBatch}
                 onFinalizeBatch={handleFinalizeBatch}
                 onDeleteBatch={handleDeleteBatch}
                 getStageOf={getStageOfDoc}
                 canCreateBatch={activePermissions.canCreateBatch}
-                canDelete={activePermissions.canDeleteItems}
+                canDelete={canAuthorizedDelete}
               />
             )}
             </motion.div>
@@ -2950,10 +3039,10 @@ export default function App() {
                         onAddCarrier={handleAddCarrier}
                         onAddGoods={handleAddGoods}
                         onAddBrand={handleAddBrand}
-                        onDeleteImporter={handleDeleteImporter}
-                        onDeleteCarrier={handleDeleteCarrier}
-                        onDeleteGoods={handleDeleteGoods}
-                        onDeleteBrand={handleDeleteBrand}
+                        onDeleteImporter={canAuthorizedDelete ? handleDeleteImporter : undefined}
+                        onDeleteCarrier={canAuthorizedDelete ? handleDeleteCarrier : undefined}
+                        onDeleteGoods={canAuthorizedDelete ? handleDeleteGoods : undefined}
+                        onDeleteBrand={canAuthorizedDelete ? handleDeleteBrand : undefined}
                         existingExits={exits}
                       />
                     )}
@@ -3148,7 +3237,7 @@ export default function App() {
                               physicalExits={physicalExits}
                               isHighlighted={highlightedExitId === exitDoc.id}
                               canEdit={activePermissions.canCreateExit}
-                              canDelete={activePermissions.canDeleteItems}
+                              canDelete={canAuthorizedDelete}
                               canUpdateStages={activePermissions.canUpdateExitStages}
                               onEdit={(d) => {
                                 if (!activePermissions.canCreateExit) {
@@ -3158,10 +3247,6 @@ export default function App() {
                                 handleStartEditExit(d);
                               }}
                               onDelete={(id) => {
-                                if (!activePermissions.canDeleteItems) {
-                                  addToast('حذف اسناد برای دسترسی شما محدود است.', 'err');
-                                  return;
-                                }
                                 handleDeleteExit(id);
                               }}
                               onUpdateExit={(updatedDoc) => {
@@ -3230,6 +3315,8 @@ export default function App() {
                 primaryCompany={company?.name || importers[0] || ''}
                 primaryCargo={goodsList[0] || ''}
                 canManageLetters={Boolean(activePermissions.canManageLetters && userRole !== 'viewer')}
+                canDelete={canAuthorizedDelete}
+                onRequestProtectedDelete={requestProtectedDelete}
                 isViewOnly={userRole === 'viewer' || !activePermissions.canManageLetters}
               />
             </motion.div>
@@ -3297,8 +3384,16 @@ export default function App() {
         isOpen={confirmModal.isOpen}
         title={confirmModal.title}
         text={confirmModal.text}
+        okLabel={confirmModal.okLabel}
+        requireDeletePassword={confirmModal.requireDeletePassword}
         onConfirm={confirmModal.action}
-        onCancel={() => setConfirmModal((prev) => ({ ...prev, isOpen: false }))}
+        onCancel={() =>
+          setConfirmModal((prev) => ({
+            ...prev,
+            isOpen: false,
+            requireDeletePassword: false,
+          }))
+        }
       />
 
       {/* Company Settings Modal (Profile, Operations, Users, Roles, Onboarding Restart) */}
@@ -3309,6 +3404,8 @@ export default function App() {
           workspace={workspace}
           onWorkspaceUpdated={() => refreshWorkspace(workspace.company.id)}
           onLaunchRestartWizard={handleLaunchRestartWizard}
+          canDelete={canAuthorizedDelete}
+          onRequestProtectedDelete={requestProtectedDelete}
           addToast={addToast}
         />
       )}
@@ -3368,6 +3465,8 @@ export default function App() {
         isOpen={isSecurityModalOpen}
         onClose={() => setIsSecurityModalOpen(false)}
         canManagePermissions={canOpenCompanySettings}
+        canDelete={canAuthorizedDelete}
+        onRequestProtectedDelete={requestProtectedDelete}
         onOpenPermissionsModal={() => {
           setIsSecurityModalOpen(false);
           setIsCompanySettingsOpen(true);
@@ -3387,7 +3486,7 @@ export default function App() {
           batches={batches}
           physicalExits={physicalExits}
           currentUser={activeOperatorLabel}
-          permissions={activePermissions}
+          permissions={{ ...activePermissions, canDeleteItems: canAuthorizedDelete }}
           isViewOnly={userRole === 'viewer'}
           onClose={() => setClearanceDrawerDocId(null)}
           onUpdateDoc={handleUpdateEntryClearanceDoc}
@@ -3430,7 +3529,7 @@ export default function App() {
         exits={enableExport ? exits : []}
         currentUser={activeOperatorLabel}
         canManage={userRole !== 'viewer' && activePermissions.canManageTasks !== false}
-        canDelete={userRole !== 'viewer' && activePermissions.canDeleteItems}
+        canDelete={canAuthorizedDelete}
         prefillEntryDoc={taskPrefillDoc}
         onAddTask={handleAddDailyTask}
         onUpdateTask={handleUpdateDailyTask}

@@ -453,13 +453,7 @@ export const Clearance9010Drawer: React.FC<Clearance9010DrawerProps> = ({
       addToast('امکان حذف این تراکنش خروج برای شما مجاز نیست.', 'err');
       return;
     }
-    onRequestMasterPassword(
-      `برای حذف تراکنش خروج فیزیکی (${fa(tx.pallets)} پالت · ${tx.truckInfo}) رمز مدیریت را وارد کنید.`,
-      () => {
-        onDeletePhysicalExit(tx.id);
-        addToast('تراکنش خروج فیزیکی حذف شد و موجودی پالت‌ها بروزرسانی گردید.', 'info');
-      }
-    );
+    onDeletePhysicalExit(tx.id);
   };
 
   const handleFinalClosure = () => {

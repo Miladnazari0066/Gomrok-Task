@@ -42,6 +42,12 @@ interface CustomsLettersSectionProps {
   primaryCompany?: string;
   primaryCargo?: string;
   canManageLetters?: boolean;
+  canDelete?: boolean;
+  onRequestProtectedDelete?: (
+    title: string,
+    text: string,
+    onConfirmed: () => void | Promise<void>
+  ) => void;
   isViewOnly?: boolean;
 }
 
@@ -112,6 +118,8 @@ export const CustomsLettersSection: React.FC<CustomsLettersSectionProps> = ({
   onClose,
   companyId,
   canManageLetters = true,
+  canDelete = false,
+  onRequestProtectedDelete,
   isViewOnly = false,
 }) => {
   const storageKey = getLettersStorageKey(companyId);
@@ -379,9 +387,9 @@ export const CustomsLettersSection: React.FC<CustomsLettersSectionProps> = ({
     setIsAddModalOpen(false);
   };
 
-  // Delete letter
-  const handleDeleteLetter = (id: string) => {
-    if (!userCanManage) return;
+  // Delete letter (exclusively guarded via canDelete + protected confirm)
+  const executeDeleteLetter = (id: string) => {
+    if (!userCanManage || !canDelete) return;
     const target = letters.find((l) => l.id === id);
     setLetters((prev) => prev.filter((l) => l.id !== id));
     setDeleteConfirmId(null);
@@ -712,14 +720,26 @@ export const CustomsLettersSection: React.FC<CustomsLettersSectionProps> = ({
                         <Edit3 className="w-3.5 h-3.5" />
                       </button>
 
-                      <button
-                        type="button"
-                        onClick={() => setDeleteConfirmId(letter.id)}
-                        className="p-2 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 hover:text-rose-300 transition-colors"
-                        title="حذف این نامه"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
+                      {canDelete && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (onRequestProtectedDelete) {
+                              onRequestProtectedDelete(
+                                `حذف نامه گمرکی «${letter.title}»`,
+                                'آیا از حذف این نامه از آرشیو اطمینان دارید؟ این عملیات غیرقابل بازگشت است.',
+                                () => executeDeleteLetter(letter.id)
+                              );
+                            } else {
+                              setDeleteConfirmId(letter.id);
+                            }
+                          }}
+                          className="p-2 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 hover:text-rose-300 transition-colors cursor-pointer"
+                          title="حذف این نامه"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      )}
                     </>
                   )}
                 </div>
@@ -1158,7 +1178,7 @@ export const CustomsLettersSection: React.FC<CustomsLettersSectionProps> = ({
       {/* ========================================================================= */}
       {/* DELETE CONFIRMATION MODAL (ADMIN ONLY)                                    */}
       {/* ========================================================================= */}
-      {deleteConfirmId && userCanManage && (
+      {deleteConfirmId && userCanManage && canDelete && !onRequestProtectedDelete && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md">
           <div className="bg-[#0c142b] w-full max-w-sm rounded-2xl border border-rose-500/30 p-5 shadow-2xl text-center space-y-3">
             <div className="w-12 h-12 rounded-full bg-rose-500/10 text-rose-400 flex items-center justify-center mx-auto">
@@ -1176,7 +1196,7 @@ export const CustomsLettersSection: React.FC<CustomsLettersSectionProps> = ({
                 انصراف
               </button>
               <button
-                onClick={() => handleDeleteLetter(deleteConfirmId)}
+                onClick={() => executeDeleteLetter(deleteConfirmId)}
                 className="px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-500 text-white text-xs font-bold transition-colors shadow-lg shadow-rose-600/20"
               >
                 بله، حذف شود
